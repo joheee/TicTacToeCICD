@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
+    "db:up": "docker compose up -d --wait db",
     "migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {

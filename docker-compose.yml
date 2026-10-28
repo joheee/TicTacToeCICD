@@ -1,14 +1,19 @@
 # Same file locally and on EC2. Only .env values and IMAGE_TAG change.
+name: tictactoe-app
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # Loopback only: lets `npm run dev` on the host reach the DB, never reachable from outside.
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 3s
