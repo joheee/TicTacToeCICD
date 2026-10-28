@@ -70,7 +70,7 @@ Auth.js credentials provider for auth.
 
 ## Definition of done
 
-- [ ] `docker compose up` runs the app and Postgres locally; register and login work.
+- [x] `docker compose up` runs the app and Postgres locally; register and login work.
 - [ ] PR workflow runs lint, tests and a Docker build.
 - [ ] Merge to `main` builds, pushes to ECR and deploys to EC2 via SSM using OIDC.
 - [ ] Smoke test runs after every deploy.
