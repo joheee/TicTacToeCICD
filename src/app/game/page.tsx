@@ -25,29 +25,46 @@ export default async function GamePage() {
     .limit(10);
 
   return (
-    <main>
-      <h1>Tic-Tac-Toe</h1>
-      <p>Signed in as {user.username}</p>
-      <div className="game">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
+      <header className="mb-8 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Tic-Tac-Toe</h1>
+          <p className="text-sm text-muted">
+            Signed in as <span className="font-mono text-accent">{user.username}</span>
+          </p>
+        </div>
+        <form action={logout}>
+          <button className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition hover:border-accent hover:text-foreground">
+            Log out
+          </button>
+        </form>
+      </header>
+
+      <div className="grid items-start gap-6 md:grid-cols-[auto_1fr]">
         <Board initialScore={score} />
-        <aside>
-          <h2>Top 10</h2>
+        <aside className="rounded-2xl border border-border bg-card p-5 shadow-xl shadow-black/20 sm:p-6">
+          <h2 className="mb-4 text-lg font-semibold">Top 10</h2>
           {top.length === 0 ? (
-            <p>No wins yet.</p>
+            <p className="text-sm text-muted">No wins yet. Be the first!</p>
           ) : (
-            <ol>
-              {top.map((u) => (
-                <li key={u.username}>
-                  {u.username} — {u.wins}W / {u.losses}L
+            <ol className="grid gap-1.5">
+              {top.map((u, i) => (
+                <li
+                  key={u.username}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
+                    u.username === user.username ? "bg-accent/15 ring-1 ring-accent/40" : "bg-background"
+                  }`}
+                >
+                  <span className="w-5 font-mono text-muted">{i + 1}</span>
+                  <span className="flex-1 truncate">{u.username}</span>
+                  <span className="font-mono text-ok">{u.wins}W</span>
+                  <span className="font-mono text-muted">{u.losses}L</span>
                 </li>
               ))}
             </ol>
           )}
         </aside>
       </div>
-      <form action={logout}>
-        <button>Log out</button>
-      </form>
     </main>
   );
 }

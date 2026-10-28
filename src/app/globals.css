@@ -1,13 +1,68 @@
-body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1a1a1a; }
-main { max-width: 360px; margin: 4rem auto; padding: 0 1rem; }
-form { display: grid; gap: 1rem; }
-label { display: grid; gap: .25rem; font-size: .9rem; }
-input { padding: .5rem; font-size: 1rem; }
-button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
-.error { color: #b00020; margin: 0; }
-.board { display: grid; grid-template-columns: repeat(3, 5rem); gap: .5rem; margin: 1rem 0; }
-.board button { height: 5rem; font-size: 2rem; }
-main:has(.game) { max-width: 640px; }
-.game { display: flex; flex-wrap: wrap; gap: 2rem; }
-.game aside h2 { margin: 1rem 0 .5rem; font-size: 1.1rem; }
-.game aside ol { margin: 0; padding-left: 1.25rem; }
+@import "tailwindcss";
+
+/* Palette: Aura Soft Dark, same tokens as the portfolio site. Components use the semantic
+   names (bg-card, text-muted, ...) and never hardcode colours. */
+:root {
+  color-scheme: dark;
+  --background: #21202e;
+  --foreground: #edecee;
+  --muted: #a29fb7;
+  --border: #3d375e;
+  --card: #29263c;
+  --accent: #a277ff;
+  --accent-foreground: #15141b;
+  --ok: #34d399;
+  --err: #fca5a5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ok: var(--ok);
+  --color-err: var(--err);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* iOS zooms the page when a field under 16px is focused. */
+@media (pointer: coarse) {
+  input {
+    font-size: 16px;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.pop {
+  animation: pop 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pop {
+    animation: none;
+  }
+}

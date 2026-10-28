@@ -6,11 +6,13 @@ const LINES = [
   [0, 4, 8], [2, 4, 6],
 ];
 
+export function winningLine(board: Cell[]): number[] | null {
+  return LINES.find(([a, b, c]) => board[a] && board[a] === board[b] && board[a] === board[c]) ?? null;
+}
+
 export function winner(board: Cell[]): "X" | "O" | null {
-  for (const [a, b, c] of LINES) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
-  }
-  return null;
+  const line = winningLine(board);
+  return line ? board[line[0]] : null;
 }
 
 export function isDraw(board: Cell[]): boolean {
