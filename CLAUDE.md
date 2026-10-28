@@ -11,6 +11,22 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
 - Everything runs in Docker Compose, locally and on EC2.
 - Deploys go GitHub Actions → Amazon ECR → EC2 via AWS SSM, authenticated with
   GitHub OIDC.
+- AWS infrastructure lives in a separate Terraform repo, **tictactoe-infra**.
+  This repo only uses its outputs (see "Two repos" in `GOALS.md`).
+
+## Infrastructure boundary
+
+- Never create, change or delete AWS resources from this repo: no Terraform
+  here, no `aws ... create-*` in workflows or scripts, no console steps in the
+  README. Workflows may only push images, send SSM commands and read SSM
+  parameters, using the deploy role from tictactoe-infra.
+- Read AWS values from GitHub Actions variables (`vars.AWS_REGION`,
+  `vars.AWS_DEPLOY_ROLE_ARN`, `vars.ECR_REPOSITORY_URL`, `vars.EC2_INSTANCE_ID`,
+  `vars.APP_URL`, `vars.SSM_PARAM_PREFIX`). Never hard-code account IDs, ARNs,
+  instance IDs or URLs.
+- If a workflow needs a new permission, port or parameter, stop and say what
+  tictactoe-infra must add (resource and output name) instead of working
+  around it.
 
 ## App state
 

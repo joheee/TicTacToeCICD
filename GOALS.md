@@ -4,6 +4,33 @@ This repo is portfolio project #4 for my Upwork DevOps profile. The point of the
 project is the **pipeline**, not the app. A client should be able to look at this
 repo and think "this person can set up CI/CD for my EC2 app in 48 hours".
 
+## Two repos
+
+The project is split the way a client's setup usually is:
+
+| Repo | Holds | Changes when |
+|---|---|---|
+| **TicTacToeCICD** (this repo) | Next.js app, Dockerfile, Compose file, GitHub Actions workflows (CI, build, deploy, smoke test, rollback), README runbook | The app or the pipeline changes |
+| **tictactoe-infra** (Terraform) | Every AWS resource: ECR repo, EC2 instance with SSM, networking and security group, IAM instance role, GitHub OIDC provider and deploy role, SSM Parameter Store entries | The infrastructure changes |
+
+This repo never creates AWS resources, by hand or by script. The pipeline only
+*uses* what Terraform created, through these values copied from
+`terraform output` into GitHub Actions **repository variables** (not secrets;
+none of them are sensitive):
+
+| Variable | Terraform output | Used for |
+|---|---|---|
+| `AWS_REGION` | `aws_region` | Every AWS call |
+| `AWS_DEPLOY_ROLE_ARN` | `github_deploy_role_arn` | OIDC login in the workflow |
+| `ECR_REPOSITORY_URL` | `ecr_repository_url` | Image push and `IMAGE_REPO` on EC2 |
+| `EC2_INSTANCE_ID` | `instance_id` | SSM Run Command target |
+| `APP_URL` | `app_url` | Public smoke test |
+| `SSM_PARAM_PREFIX` | `ssm_parameter_prefix` | Where the instance reads `.env` values (e.g. `/tictactoe/prod/`) |
+
+If the pipeline needs something new from AWS (a permission, a port, a
+parameter), the change goes into tictactoe-infra first and its output is added
+to the table above.
+
 ## The pitch (what a client buys)
 
 > "CI/CD pipeline for your EC2 app, 48 hours." GitHub Actions builds a Docker
@@ -39,9 +66,11 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 4. **Build and push on merge to `main`.** Build the image once, tag it with the
    git SHA, push to Amazon ECR.
 5. **Deploy to EC2 without SSH keys.** GitHub Actions authenticates to AWS with
-   **OIDC** (no stored access keys) and deploys with **AWS SSM Run Command**
-   (no port 22 open). The instance pulls the new tag and restarts the app
-   container. Database migrations run before the new app container starts.
+   **OIDC** (no stored access keys), assuming the deploy role created by
+   tictactoe-infra, and deploys with **AWS SSM Run Command** (no port 22 open).
+   The instance builds its `.env` from SSM Parameter Store, pulls the new tag
+   and restarts the app container. Database migrations run before the new app
+   container starts.
 6. **Smoke test.** After deploy, `curl` the health endpoint and the login page
    until they pass or a timeout hits.
 7. **Automatic rollback.** If the smoke test fails, redeploy the last known-good
@@ -55,7 +84,9 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 
 ## Out of scope
 
-- Kubernetes, ECS, Terraform-heavy infrastructure (those are projects 1 and 7).
+- Kubernetes, ECS (those are projects 1 and 7).
+- Any Terraform or AWS resource creation in this repo. That lives in
+  tictactoe-infra; this repo only reads its outputs.
 - Fancy UI. Plain, clean pages are fine (Tailwind styling is already in; no more
   UI work).
 - More game features: game history page, replays, move-by-move storage,
@@ -68,7 +99,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | When | Work |
 |---|---|
 | Day 1 morning | Next.js app: register/login/logout, Postgres schema + migrations, `/api/health`, Dockerfile (multi-stage, standalone output), `docker-compose.yml`. Runs locally. |
-| Day 1 afternoon | AWS setup: ECR repo, EC2 instance with SSM agent and Docker, IAM role for the instance, GitHub OIDC role. PR workflow and build-push-deploy workflow working end to end. |
+| Day 1 afternoon | tictactoe-infra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow and build-push-deploy workflow working end to end. |
 | Day 2 morning | Smoke test, automatic rollback, the "bad deploy" switch, rollback tested for real. |
 | Day 2 afternoon | README handover, architecture diagram, cost estimate, screen recording, Upwork portfolio entry. |
 
@@ -78,15 +109,16 @@ GitHub Actions · Docker · Docker Compose · Amazon ECR · Amazon EC2 ·
 AWS SSM (Run Command) · AWS IAM OIDC · Next.js (App Router, TypeScript) ·
 PostgreSQL · curl smoke tests · draw.io for the diagram
 
-App-level choices (open to change): Prisma or Drizzle for the schema and
-migrations, bcrypt/argon2 for password hashing, session cookies (httpOnly) or
-Auth.js credentials provider for auth.
+App-level choices (made): Drizzle for the schema and migrations, bcryptjs for
+password hashing, httpOnly session cookies for auth.
 
 ## Definition of done
 
 - [x] `docker compose up` runs the app and Postgres locally; register and login work.
 - [ ] PR workflow runs lint, tests and a Docker build.
 - [ ] Merge to `main` builds, pushes to ECR and deploys to EC2 via SSM using OIDC.
+- [ ] Every AWS value the workflows use comes from a GitHub Actions variable
+      that matches a tictactoe-infra output; nothing AWS is created from here.
 - [ ] Smoke test runs after every deploy.
 - [ ] A broken deploy rolls itself back to the previous image with no manual step.
 - [ ] No AWS keys, DB passwords or session secrets committed; secrets live in
