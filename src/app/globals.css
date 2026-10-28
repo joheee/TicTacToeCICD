@@ -7,3 +7,7 @@ button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
 .error { color: #b00020; margin: 0; }
 .board { display: grid; grid-template-columns: repeat(3, 5rem); gap: .5rem; margin: 1rem 0; }
 .board button { height: 5rem; font-size: 2rem; }
+main:has(.game) { max-width: 640px; }
+.game { display: flex; flex-wrap: wrap; gap: 2rem; }
+.game aside h2 { margin: 1rem 0 .5rem; font-size: 1.1rem; }
+.game aside ol { margin: 0; padding-left: 1.25rem; }

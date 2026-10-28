@@ -1,6 +1,7 @@
 "use server";
 
 import { eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { getUser } from "./auth";
 import { db } from "./db";
 import { botMove, emptyCells, isDraw, winner, type Cell } from "./game";
@@ -44,5 +45,6 @@ export async function playMove(board: Cell[], index: number): Promise<PlayResult
     .set({ [field]: sql`${users[field]} + 1` })
     .where(eq(users.id, user.id))
     .returning({ wins: users.wins, losses: users.losses, draws: users.draws });
+  revalidatePath("/game"); // refresh the leaderboard
   return { board: next, outcome, score };
 }
