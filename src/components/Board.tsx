@@ -79,7 +79,9 @@ export default function Board({ initialScore }: { initialScore: Score }) {
 
       <button
         onClick={reset}
-        className="mx-auto block cursor-pointer rounded-lg border border-border px-4 py-2 text-sm text-muted transition hover:border-accent hover:text-foreground"
+        className={`mx-auto block cursor-pointer rounded-lg border border-border px-4 py-2 text-sm text-muted transition hover:border-accent hover:text-foreground ${
+          outcome ? "blink" : ""
+        }`}
       >
         New game
       </button>

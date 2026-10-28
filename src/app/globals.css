@@ -66,3 +66,25 @@ button:focus-visible {
     animation: none;
   }
 }
+
+/* Draws attention to "New game" once a game is over. */
+@keyframes blink {
+  50% {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-foreground);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+.blink {
+  animation: blink 1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blink {
+    animation: none;
+    border-color: var(--accent);
+    color: var(--foreground);
+  }
+}
