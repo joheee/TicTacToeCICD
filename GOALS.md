@@ -94,12 +94,30 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 - Managed RDS. Postgres runs in Compose with a named volume, so the demo stays
   cheap; the README mentions RDS as the production upgrade.
 
+## Status (checked 28 Oct 2026)
+
+| # | Objective | State |
+|---|---|---|
+| 1 | Sample app | Done. Auth, game, leaderboard, `/api/health`, migrations `0000`–`0003`. |
+| 2 | Docker Compose | Done locally (db → migrate → app). Not run on EC2 yet. |
+| 3 | CI on pull requests | Done. `.github/workflows/ci.yml`: lint, type-check, test and a Docker build (`push: false`, tagged with the git SHA). Runs on PRs and pushes to `main`; green on `main`. |
+| 4 | Build and push to ECR | Not started. Needs tictactoe-infra outputs. |
+| 5 | Deploy to EC2 via SSM + OIDC | Not started. Needs tictactoe-infra outputs. |
+| 6 | Smoke test | Not started. |
+| 7 | Automatic rollback | Not started. |
+| 8 | Recorded bad deploy | Not started. |
+| 9 | Client-style README | Started. Local run and CI sections are written; diagram, deploy/rollback runbook, cost estimate and recording are still missing. |
+
+Blocked on: the tictactoe-infra repo (ECR, EC2, OIDC role, SSM parameters) and
+its outputs in this repo's GitHub Actions variables. Next in this repo once
+those exist: a separate release workflow (`deploy.yml`) for objectives 4–7.
+
 ## Plan (1–2 days)
 
 | When | Work |
 |---|---|
-| Day 1 morning | Next.js app: register/login/logout, Postgres schema + migrations, `/api/health`, Dockerfile (multi-stage, standalone output), `docker-compose.yml`. Runs locally. |
-| Day 1 afternoon | tictactoe-infra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow and build-push-deploy workflow working end to end. |
+| Day 1 morning ✓ | Next.js app: register/login/logout, Postgres schema + migrations, `/api/health`, Dockerfile (multi-stage, standalone output), `docker-compose.yml`. Runs locally. |
+| Day 1 afternoon (PR workflow ✓) | tictactoe-infra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow ✓ and build-push-deploy workflow working end to end. |
 | Day 2 morning | Smoke test, automatic rollback, the "bad deploy" switch, rollback tested for real. |
 | Day 2 afternoon | README handover, architecture diagram, cost estimate, screen recording, Upwork portfolio entry. |
 
@@ -115,7 +133,7 @@ password hashing, httpOnly session cookies for auth.
 ## Definition of done
 
 - [x] `docker compose up` runs the app and Postgres locally; register and login work.
-- [ ] PR workflow runs lint, tests and a Docker build.
+- [x] PR workflow runs lint, tests and a Docker build.
 - [ ] Merge to `main` builds, pushes to ECR and deploys to EC2 via SSM using OIDC.
 - [ ] Every AWS value the workflows use comes from a GitHub Actions variable
       that matches a tictactoe-infra output; nothing AWS is created from here.

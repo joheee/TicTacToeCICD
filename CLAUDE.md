@@ -39,6 +39,26 @@ Code layout: game rules and bot in `src/lib/game.ts` (unit-tested), server
 actions in `src/lib/play.ts` and `src/lib/actions.ts`, schema in
 `src/lib/schema.ts`, migrations in `migrations/`.
 
+## Pipeline state
+
+- Done: `.github/workflows/ci.yml` runs on PRs and pushes to `main`. Two
+  parallel jobs: lint/type-check/test (Node 22, `npm ci`) and a Docker Buildx
+  build with `push: false`, tagged with `github.sha` and passing
+  `APP_VERSION=${{ github.sha }}`. It has no AWS access and must stay that way.
+- Not done: build and push to ECR, deploy over SSM, smoke test, rollback. Add
+  them as a separate workflow (e.g. `deploy.yml`, triggered on push to `main`
+  or after CI succeeds) with `permissions: id-token: write` for OIDC. Don't put
+  AWS steps into `ci.yml`.
+- The release build must use the same Dockerfile and `APP_VERSION` build arg as
+  the CI build, so the image CI checked is the image that ships.
+- These steps need tictactoe-infra to exist and its outputs to be set as
+  GitHub Actions variables. If they aren't set yet, say so instead of
+  inventing values.
+- `npm run lint` is `eslint .` (flat config in `eslint.config.mjs`), not
+  `next lint`.
+- The README's CI section is the pattern to follow: document each new workflow
+  there (jobs, triggers, what it touches) in the same commit.
+
 ## Database and migrations
 
 - Change the schema in `src/lib/schema.ts`, then run `npm run db:generate` and
