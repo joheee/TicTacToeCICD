@@ -12,8 +12,8 @@ export default async function GamePage() {
   const user = await getUser();
   if (!user) redirect("/login");
 
-  const [score] = await db
-    .select({ wins: users.wins, losses: users.losses, draws: users.draws })
+  const [{ currentBoard, ...score }] = await db
+    .select({ wins: users.wins, losses: users.losses, draws: users.draws, currentBoard: users.currentBoard })
     .from(users)
     .where(eq(users.id, user.id));
 
@@ -41,7 +41,7 @@ export default async function GamePage() {
       </header>
 
       <div className="grid items-start gap-6 md:grid-cols-[auto_1fr]">
-        <Board initialScore={score} />
+        <Board initialScore={score} initialBoard={currentBoard} />
         <aside className="rounded-2xl border border-border bg-card p-5 shadow-xl shadow-black/20 sm:p-6">
           <h2 className="mb-4 text-lg font-semibold">Top 10</h2>
           {top.length === 0 ? (

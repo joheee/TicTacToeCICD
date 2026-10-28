@@ -19,6 +19,12 @@ export function isDraw(board: Cell[]): boolean {
   return !winner(board) && board.every(Boolean);
 }
 
+// The result from the human's (X) point of view, or null while the game is still going.
+export function outcomeOf(board: Cell[]): "win" | "loss" | "draw" | null {
+  const w = winner(board);
+  return w === "X" ? "win" : w === "O" ? "loss" : isDraw(board) ? "draw" : null;
+}
+
 // Minimax score from O's (the bot's) point of view: +1 O wins, -1 X wins, 0 draw.
 // Depth is subtracted so the bot prefers quick wins and slow losses.
 function minimax(board: Cell[], turn: "X" | "O", depth: number): number {

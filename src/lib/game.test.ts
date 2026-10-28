@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMove, botMove, isDraw, winner, type Cell } from "./game";
+import { bestMove, botMove, isDraw, outcomeOf, winner, type Cell } from "./game";
 
 const empty = (): Cell[] => Array(9).fill(null);
 
@@ -70,5 +70,15 @@ describe("game", () => {
     b[0] = b[1] = "X";
     b[4] = "O";
     expect(botMove(b, () => 0.99, 0.3)).toBe(2);
+  });
+
+  it("reports the outcome from the human's side, or null mid-game", () => {
+    const x: Cell[] = ["X", "X", "X", "O", "O", null, null, null, null];
+    const o: Cell[] = ["O", "O", "O", "X", "X", null, "X", null, null];
+    const d: Cell[] = ["X", "O", "X", "X", "O", "O", "O", "X", "X"];
+    expect(outcomeOf(x)).toBe("win");
+    expect(outcomeOf(o)).toBe("loss");
+    expect(outcomeOf(d)).toBe("draw");
+    expect(outcomeOf(empty())).toBeNull();
   });
 });

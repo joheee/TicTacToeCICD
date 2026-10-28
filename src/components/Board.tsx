@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { winningLine, type Cell } from "@/lib/game";
-import { playMove, type Score } from "@/lib/play";
+import { outcomeOf, winningLine, type Cell } from "@/lib/game";
+import { newGame, playMove, type Score } from "@/lib/play";
 
 const MESSAGES = { win: "You win! 🎉", loss: "The bot wins.", draw: "It's a draw." };
 const TONE = { win: "text-ok", loss: "text-err", draw: "text-muted" };
 
-export default function Board({ initialScore }: { initialScore: Score }) {
-  const [board, setBoard] = useState<Cell[]>(Array(9).fill(null));
-  const [outcome, setOutcome] = useState<keyof typeof MESSAGES | null>(null);
+export default function Board({ initialScore, initialBoard }: { initialScore: Score; initialBoard: Cell[] | null }) {
+  const [board, setBoard] = useState<Cell[]>(initialBoard ?? Array(9).fill(null));
+  const [outcome, setOutcome] = useState<keyof typeof MESSAGES | null>(initialBoard && outcomeOf(initialBoard));
   const [score, setScore] = useState(initialScore);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
@@ -30,6 +30,7 @@ export default function Board({ initialScore }: { initialScore: Score }) {
     setBoard(Array(9).fill(null));
     setOutcome(null);
     setError("");
+    start(() => newGame());
   };
 
   const stats = [

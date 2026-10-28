@@ -11,7 +11,7 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:up": "docker compose up -d --wait db",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node --env-file-if-exists=.env scripts/migrate.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

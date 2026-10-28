@@ -15,6 +15,20 @@
       "when": 1793220985754,
       "tag": "0001_lucky_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793222179089,
+      "tag": "0002_brave_jamie_braddock",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793222761903,
+      "tag": "0003_daffy_korg",
+      "breakpoints": true
     }
   ]
 }
