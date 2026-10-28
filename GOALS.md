@@ -20,6 +20,17 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
    logout, backed by PostgreSQL. After login the user lands on a simple
    tic-tac-toe page (matches the repo name). Exposes `GET /api/health` that
    checks the database connection and returns the app version.
+   The game page (built, and now frozen unless the pipeline needs a change):
+   - The human plays X against a deliberately flawed minimax bot (it plays a
+     random move 30% of the time, so the human can win).
+   - Per-user win/loss/draw counts and a Top 10 leaderboard.
+   - Every finished game is stored in a `games` table (final board and outcome;
+     move order is not kept).
+   - The last board, finished or not, is saved on the user and shown again after
+     a refresh or re-login. Only the "New game" button clears it.
+   - The server validates every move and is the only writer of scores and games.
+   These features also give the pipeline real migrations to run (`0000`-`0003`),
+   which is what the "migrations run before the new app starts" step is for.
 2. **Everything in Docker Compose.** `docker compose up` runs the Next.js app and
    Postgres locally and on EC2. Same compose file in both places; only env vars
    and the image tag change.
@@ -45,7 +56,10 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 ## Out of scope
 
 - Kubernetes, ECS, Terraform-heavy infrastructure (those are projects 1 and 7).
-- Fancy UI. Plain, clean pages are fine.
+- Fancy UI. Plain, clean pages are fine (Tailwind styling is already in; no more
+  UI work).
+- More game features: game history page, replays, move-by-move storage,
+  multiplayer. The app is done; spend the remaining time on the pipeline.
 - Managed RDS. Postgres runs in Compose with a named volume, so the demo stays
   cheap; the README mentions RDS as the production upgrade.
 
