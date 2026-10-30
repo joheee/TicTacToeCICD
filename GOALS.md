@@ -82,9 +82,11 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
    (for example `/opt/app/last_good_tag`).
 8. **Prove it.** A deliberate "bad deploy" (for example an env flag or a commit
    that makes `/api/health` return 500) that the pipeline rolls back on its own.
-   This is what the 2–3 minute screen recording shows.
+   The failed GitHub Actions run (smoke test red, previous image redeployed) is
+   the evidence. No screen recording (dropped as a goal on 30 Oct 2026).
 9. **Client-style README.** Architecture diagram, setup steps, runbook (deploy,
-   manual rollback, rotate secrets), monthly cost estimate, and the recording.
+   manual rollback, rotate secrets), monthly cost estimate, and a link to the
+   rolled-back workflow run.
 10. **HTTPS.** A Caddy container in Compose (EC2 only) terminates TLS for
     `tictactoe.johe.my.id` with an automatic Let's Encrypt certificate, redirects
     HTTP to HTTPS, and adds security headers. The smoke test runs against the
@@ -115,8 +117,8 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 5 | Deploy to EC2 via SSM + OIDC | Done and run against AWS. Live at https://tictactoe.johe.my.id. |
 | 6 | Smoke test | Done. Runs after every deploy against the public HTTPS URL. |
 | 7 | Automatic rollback | Done and proven (see 8). |
-| 8 | Recorded bad deploy | Demonstrated for real on 30 Oct 2026 with `break_health` (the smoke test failed, `last_good_tag` was redeployed, the run ended red). The screen recording is not made. |
-| 9 | Client-style README | Local run, CI, supply chain, deploy, HTTPS, one-time setup and runbook are written. Missing: architecture diagram, cost estimate, recording link. |
+| 8 | Proven bad deploy | Done. Demonstrated for real on 30 Oct 2026 with `break_health` (the smoke test failed, `last_good_tag` was redeployed, the run ended red). |
+| 9 | Client-style README | Local run, CI, supply chain, deploy, HTTPS, one-time setup and runbook are written. Missing: architecture diagram, cost estimate, link to the rolled-back run. |
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
 
@@ -131,7 +133,7 @@ Open items:
 - Requests for TicTacToeInfra, to confirm there: an Elastic IP (so the DNS record
   survives an instance stop), EBS snapshots or a `pg_dump` backup, IMDSv2 required,
   ECR scan on push, a budget alert.
-- README: architecture diagram, cost estimate, recording. Then the Upwork portfolio entry.
+- README: architecture diagram, cost estimate, link to the rolled-back run. Then the Upwork portfolio entry.
 
 ## Plan (1–2 days)
 
@@ -140,7 +142,7 @@ Open items:
 | Day 1 morning ✓ | Next.js app: register/login/logout, Postgres schema + migrations, `/api/health`, Dockerfile (multi-stage, standalone output), `docker-compose.yml`. Runs locally. |
 | Day 1 afternoon ✓ | TicTacToeInfra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow ✓ and build-push-deploy workflow working end to end ✓. |
 | Day 2 morning ✓ | Smoke test, automatic rollback, the "bad deploy" switch, rollback tested for real. Plus HTTPS (Caddy) and the supply-chain checks. |
-| Day 2 afternoon | README handover, architecture diagram, cost estimate, screen recording, Upwork portfolio entry. |
+| Day 2 afternoon | README handover, architecture diagram, cost estimate, Upwork portfolio entry. |
 
 ## Tools and software
 
@@ -166,4 +168,4 @@ password hashing, httpOnly session cookies for auth.
       history. The `CHANGE_ME` placeholder in Parameter Store is still to be replaced.)
 - [x] The site is served over HTTPS with security headers.
 - [x] CI scans dependencies, the git history and the image; actions are pinned.
-- [ ] README has the diagram, runbook, rollback steps, cost estimate and recording link.
+- [ ] README has the diagram, runbook, rollback steps, cost estimate and a link to the rolled-back run.
