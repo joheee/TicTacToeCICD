@@ -58,6 +58,7 @@ services:
       - "443:443"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-0}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data # certificates: keep this volume or Let's Encrypt rate limits kick in

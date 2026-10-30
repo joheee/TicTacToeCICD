@@ -2,5 +2,20 @@
 # and redirects http:// to https://. SITE_ADDRESS comes from .env (tictactoe.johe.my.id on EC2).
 {$SITE_ADDRESS} {
 	encode zstd gzip
+
+	header {
+		# HSTS is per hostname, not per port, so it stays at 0 (off) locally: otherwise https://localhost
+		# would make the browser force http://localhost:3000 to HTTPS. The EC2 deploy sets 1 year.
+		Strict-Transport-Security "max-age={$HSTS_MAX_AGE:0}"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# No script-src on purpose: Next.js hydrates with inline scripts, and a strict one would break the app.
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		-X-Powered-By
+		-Server
+	}
+
 	reverse_proxy app:3000
 }

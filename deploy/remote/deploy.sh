@@ -29,6 +29,8 @@ fi
 grep -q '^APP_PORT=' "$env_file" || echo "APP_PORT=3000" >> "$env_file"
 # Caddy terminates TLS, so the session cookie is HTTPS-only.
 grep -q '^COOKIE_SECURE=' "$env_file" || echo "COOKIE_SECURE=true" >> "$env_file"
+# Browsers remember "HTTPS only" for this long (1 year); see the Caddyfile.
+grep -q '^HSTS_MAX_AGE=' "$env_file" || echo "HSTS_MAX_AGE=31536000" >> "$env_file"
 printf 'COMPOSE_PROFILES=proxy\nIMAGE_REPO=%s\nIMAGE_TAG=%s\n' "$IMAGE_REPO" "$IMAGE_TAG" >> "$env_file"
 mv "$env_file" "$app/.env"
 umask 022

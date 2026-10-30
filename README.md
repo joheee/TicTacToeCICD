@@ -98,6 +98,10 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
 A [Caddy](https://caddyserver.com) container (`proxy` service, [`Caddyfile`](Caddyfile)) terminates TLS on
 ports 80 and 443 and forwards to the app on the Compose network. It gets and renews its Let's Encrypt
 certificate by itself (stored in the `caddy_data` volume) and redirects `http://` to `https://`.
+Caddy also adds security headers (HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+`Permissions-Policy`, a CSP limited to framing and form targets) and removes `X-Powered-By`. HSTS is only
+switched on by the EC2 deploy (`HSTS_MAX_AGE`, 1 year), never locally. The CSP has no `script-src` on purpose:
+Next.js hydrates with inline scripts, so a strict one would break the app.
 The app port is bound to `127.0.0.1` only, so the proxy is the only way in from outside.
 The proxy is a Compose profile: off for a local `docker compose up`, on for EC2 (the deploy sets
 `COMPOSE_PROFILES=proxy` in `.env`). The site name comes from `SITE_ADDRESS`; production uses
