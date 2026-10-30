@@ -65,7 +65,7 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
 
 | Job | Steps |
 |---|---|
-| **Lint, type-check, test, audit** | Node 22, `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=critical` |
+| **Lint, type-check, test, audit** | Node 22, `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=high` |
 | **Secret scan** | [gitleaks](https://github.com/gitleaks/gitleaks) over the whole git history |
 | **Docker build and scan** | Builds the `Dockerfile` with Buildx, tagged with the git SHA, `push: false`, then scans the image with [Trivy](https://github.com/aquasecurity/trivy) (fails on fixable HIGH or CRITICAL findings) |
 
@@ -82,10 +82,10 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
   (the tag is in a comment), and gitleaks to an image digest, so a moved tag cannot change what runs in the
   pipeline. [Dependabot](.github/dependabot.yml) opens weekly PRs for actions, npm packages, the Dockerfile
   base image and the Compose images; each PR has to pass CI.
-- **Accepted findings.** The npm audit gate blocks *critical* vulnerabilities in production dependencies.
-  Known high ones are left to Dependabot: `postcss` inside `next` 15, fixed only by Next 16, and dev-only
-  tools (`vitest`) that never reach the image. The Trivy exceptions are in [`.trivyignore`](.trivyignore),
-  each with the reason. Remove an entry when its fix ships.
+- **Accepted findings.** The npm audit gate blocks *high* and *critical* vulnerabilities in production
+  dependencies (it ignores dev-only tools such as `vitest`, which never reach the image). The Trivy
+  exceptions are in [`.trivyignore`](.trivyignore), each with the reason; the file is empty today. Remove an
+  entry when its fix ships.
 - **Smaller image.** The runner stage deletes npm, npx, corepack and yarn. The app only needs `node`, and the
   package manager's own bundled dependencies were most of the image's findings.
 - **Credentials.** Checkouts use `persist-credentials: false`, and the workflows' `GITHUB_TOKEN` is read-only
@@ -100,7 +100,7 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
 Run the same checks locally before pushing:
 
 ```bash
-npm ci && npm run lint && npm run typecheck && npm test && npm audit --omit=dev --audit-level=critical
+npm ci && npm run lint && npm run typecheck && npm test && npm audit --omit=dev --audit-level=high
 docker build --build-arg APP_VERSION=local -t tictactoe-app:check .
 ```
 

@@ -36,10 +36,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      # Fails on critical vulnerabilities in what ships. High ones (today: postcss inside next 15, fixed only
-      # by Next 16) are left to Dependabot; dev-only tools never reach the image.
+      # Fails on high or critical vulnerabilities in what ships. Dev-only tools (vitest, ...) never reach the
+      # image, so they are left to Dependabot.
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --omit=dev --audit-level=high
 
   secrets:
     name: Secret scan
