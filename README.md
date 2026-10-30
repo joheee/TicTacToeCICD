@@ -9,6 +9,41 @@ Live demo: <https://tictactoe.johe.my.id> (HTTPS through Caddy on the EC2 instan
 AWS infrastructure lives in a separate Terraform repo, **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)**.
 This repo never creates AWS resources.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph GH[GitHub]
+    app[TicTacToeCICD<br/>build, push, deploy]
+    infra[TicTacToeInfra<br/>plan, apply]
+  end
+
+  subgraph AWS[AWS ap-southeast-2]
+    oidc[GitHub OIDC provider]
+    deploy[Deploy role]
+    ci[Terraform CI role]
+    ecr[(ECR repo<br/>immutable tags)]
+    ssm[SSM Run Command<br/>+ Parameter Store<br/>/tictactoe/prod/]
+    state[(S3 state bucket<br/>created by hand)]
+
+    subgraph VPC[VPC 10.0.0.0/24 - one public subnet, no NAT]
+      ec2[EC2 AL2023<br/>Docker + Compose<br/>Elastic IP]
+    end
+  end
+
+  user((Users)) -- "80 / 443" --> ec2
+  app -- OIDC --> oidc --> deploy
+  infra -- OIDC --> oidc --> ci
+  deploy -- push image --> ecr
+  deploy -- SendCommand --> ssm -. agent .-> ec2
+  ec2 -- pull image --> ecr
+  ec2 -- read .env values --> ssm
+  ci -- state + lock --> state
+```
+
+This repo is the left-hand `TicTacToeCICD` box. Everything inside the AWS box is created by
+[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra); the pipeline only uses it.
+
 ## Run locally
 
 Requires Docker with Compose. Node 22 is only needed for the dev-server option.
@@ -74,6 +109,9 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
 - The three jobs run in parallel, so a failure in any one fails the check.
 - The Docker job passes `APP_VERSION=<git SHA>`, the same build argument the release build will use,
   so `/api/health` reports which commit is running.
+- A push to `main` that only changes Markdown files (`**.md`) skips CI, so Deploy does not run either (it
+  follows CI). Pull requests always run CI, so the required checks can report. Run Deploy by hand if you
+  ever need to ship a docs-only commit.
 - A new push to a PR cancels that PR's older run. Runs on `main` are never cancelled.
 - To make the checks block merges, require them in the repository's branch protection rules for
   `main` (a GitHub setting, not part of this repo).
@@ -121,6 +159,13 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
 | Smoke test | [`deploy/smoke-test.sh`](deploy/smoke-test.sh) checks `APP_URL/api/health` returns 200 with `"version": "<git SHA>"` and `/login` returns 200, retrying for up to 2 minutes. |
 | Mark good | Writes the SHA to `/opt/app/last_good_tag` (history in `/opt/app/deploy_history`). |
 | Rollback | If the deploy or smoke test fails: redeploys `last_good_tag`, smoke tests it, and the run ends red. |
+
+### Proof: a bad deploy rolling itself back
+
+Run [#41087349024](https://github.com/joheee/TicTacToeCICD/actions/runs/41087349024) (30 Oct 2026) was started
+by hand with `break_health` on. It built and pushed `<git SHA>-broken`, deployed it, and the **smoke test
+failed** because `/api/health` returned 503. "Mark as last good" was skipped, **"Roll back to last good"
+redeployed the previous tag** with no manual step, and the run ended red on purpose.
 
 ### HTTPS
 
@@ -207,3 +252,22 @@ The app itself guards the two public forms (`src/lib/actions.ts`, `src/lib/rateL
   it holds the database password.
 - **Rotate the DB password:** `ALTER USER` in Postgres, update `POSTGRES_PASSWORD` in Parameter Store,
   then redeploy.
+
+## Estimated monthly cost
+
+Hand calculation for `ap-southeast-2` (730 hours per month, on-demand list prices), taken from the
+TicTacToeInfra README, which owns the instance size. Check the AWS pricing pages before relying on it.
+
+| Item | Estimate (USD) |
+|---|---|
+| EC2 `t3.small`, on-demand | ~19.30 |
+| EBS gp3, 20 GiB | ~1.80 |
+| Public IPv4 / Elastic IP | ~3.65 |
+| ECR storage (a few small images) | <1 |
+| SSM Parameter Store (standard), OIDC, IAM, VPC, S3 state | ~0 |
+| Data transfer out | usage based, small |
+| **Total** | **~25** |
+
+Left out on purpose: NAT gateway, load balancer, EKS and **RDS**. Postgres runs in Compose on the instance
+to keep the demo cheap; managed RDS (backups, failover, patching) is the production upgrade. GitHub Actions,
+Let's Encrypt and Caddy cost nothing at this size.

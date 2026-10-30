@@ -118,7 +118,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 6 | Smoke test | Done. Runs after every deploy against the public HTTPS URL. |
 | 7 | Automatic rollback | Done and proven (see 8). |
 | 8 | Proven bad deploy | Done. Demonstrated for real on 30 Oct 2026 with `break_health` (the smoke test failed, `last_good_tag` was redeployed, the run ended red). |
-| 9 | Client-style README | Local run, CI, supply chain, deploy, HTTPS, one-time setup and runbook are written. Missing: architecture diagram, cost estimate, link to the rolled-back run. |
+| 9 | Client-style README | Done. Architecture diagram, local run, CI, supply chain, deploy, HTTPS, one-time setup, runbook, cost estimate and the link to the rolled-back run (#41087349024). |
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
 
@@ -130,10 +130,9 @@ Open items:
 - Dependabot PRs waiting: `typescript` 7 (fails CI), `vitest` 5, `bcryptjs`, the
   actions group, and the Node 25 base image (close it: the image stays on Node 22
   LTS to match CI).
-- Requests for TicTacToeInfra, to confirm there: an Elastic IP (so the DNS record
-  survives an instance stop), EBS snapshots or a `pg_dump` backup, IMDSv2 required,
-  ECR scan on push, a budget alert.
-- README: architecture diagram, cost estimate, link to the rolled-back run. Then the Upwork portfolio entry.
+- Requests for TicTacToeInfra (Elastic IP, IMDSv2 and ECR scan on push are already
+  there): EBS snapshots or a `pg_dump` backup, and a budget alert.
+- The Upwork portfolio entry.
 
 ## Plan (1–2 days)
 
@@ -168,4 +167,4 @@ password hashing, httpOnly session cookies for auth.
       history. The `CHANGE_ME` placeholder in Parameter Store is still to be replaced.)
 - [x] The site is served over HTTPS with security headers.
 - [x] CI scans dependencies, the git history and the image; actions are pinned.
-- [ ] README has the diagram, runbook, rollback steps, cost estimate and a link to the rolled-back run.
+- [x] README has the diagram, runbook, rollback steps, cost estimate and a link to the rolled-back run.

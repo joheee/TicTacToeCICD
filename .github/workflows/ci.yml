@@ -4,9 +4,12 @@ name: CI
 # and no AWS access is needed. Third-party actions are pinned to a commit SHA (the tag is in the comment);
 # Dependabot opens the PRs that move them.
 on:
+  # PRs always run, so the required checks can report. A push that only changes Markdown skips CI,
+  # and with it the Deploy workflow, which follows CI.
   pull_request:
   push:
     branches: [main]
+    paths-ignore: ['**.md']
 
 permissions:
   contents: read
