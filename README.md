@@ -65,20 +65,42 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
 
 | Job | Steps |
 |---|---|
-| **Lint, type-check, test** | Node 22, `npm ci`, `npm run lint`, `npm run typecheck`, `npm test` |
-| **Docker build** | Builds the `Dockerfile` with Buildx, tagged with the git SHA, `push: false` |
+| **Lint, type-check, test, audit** | Node 22, `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm audit --omit=dev --audit-level=critical` |
+| **Secret scan** | [gitleaks](https://github.com/gitleaks/gitleaks) over the whole git history |
+| **Docker build and scan** | Builds the `Dockerfile` with Buildx, tagged with the git SHA, `push: false`, then scans the image with [Trivy](https://github.com/aquasecurity/trivy) (fails on fixable HIGH or CRITICAL findings) |
 
-- The two jobs run in parallel, so a failure in either one fails the check.
+- The three jobs run in parallel, so a failure in any one fails the check.
 - The Docker job passes `APP_VERSION=<git SHA>`, the same build argument the release build will use,
   so `/api/health` reports which commit is running.
 - A new push to a PR cancels that PR's older run. Runs on `main` are never cancelled.
 - To make the checks block merges, require them in the repository's branch protection rules for
   `main` (a GitHub setting, not part of this repo).
 
+### Supply chain
+
+- **Pinned actions.** Every third-party action in `ci.yml` and `deploy.yml` is pinned to a full commit SHA
+  (the tag is in a comment), and gitleaks to an image digest, so a moved tag cannot change what runs in the
+  pipeline. [Dependabot](.github/dependabot.yml) opens weekly PRs for actions, npm packages, the Dockerfile
+  base image and the Compose images; each PR has to pass CI.
+- **Accepted findings.** The npm audit gate blocks *critical* vulnerabilities in production dependencies.
+  Known high ones are left to Dependabot: `postcss` inside `next` 15, fixed only by Next 16, and dev-only
+  tools (`vitest`) that never reach the image. The Trivy exceptions are in [`.trivyignore`](.trivyignore),
+  each with the reason. Remove an entry when its fix ships.
+- **Smaller image.** The runner stage deletes npm, npx, corepack and yarn. The app only needs `node`, and the
+  package manager's own bundled dependencies were most of the image's findings.
+- **Credentials.** Checkouts use `persist-credentials: false`, and the workflows' `GITHUB_TOKEN` is read-only
+  (`contents: read`, plus `id-token: write` in the deploy job for OIDC).
+- **GitHub settings** (not part of this repo): protect `main` and require the three CI checks (*Lint,
+  type-check, test, audit*, *Secret scan*, *Docker build and scan*) plus a reviewed PR; turn on Dependabot
+  alerts and secret scanning under Settings → Code security.
+- **Do not add `environment: production` to the deploy job** without changing TicTacToeInfra first. It
+  changes the OIDC subject claim to `...:environment:production`, so the deploy role, which trusts `main`,
+  would refuse the login.
+
 Run the same checks locally before pushing:
 
 ```bash
-npm ci && npm run lint && npm run typecheck && npm test
+npm ci && npm run lint && npm run typecheck && npm test && npm audit --omit=dev --audit-level=critical
 docker build --build-arg APP_VERSION=local -t tictactoe-app:check .
 ```
 

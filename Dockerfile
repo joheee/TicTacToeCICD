@@ -28,6 +28,12 @@ COPY --from=build --chown=node:node /app/node_modules/drizzle-orm ./node_modules
 COPY --from=build --chown=node:node /app/migrations ./migrations
 COPY --from=build --chown=node:node /app/scripts ./scripts
 
+# The app runs with `node` only. Dropping npm, npx, corepack and yarn removes a package manager nobody
+# needs at runtime and the vulnerabilities bundled inside it (the image scan in ci.yml flags them).
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

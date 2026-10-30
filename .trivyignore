@@ -1,0 +1,6 @@
+# Findings the image scan (ci.yml) accepts, each with the reason. Remove an entry when its fix ships.
+
+# postcss 8.4.31 bundled inside next 15. It only processes our own CSS at build time and never touches
+# request data. The fixed postcss comes with Next 16 (a major upgrade; Dependabot will propose it).
+CVE-2026-45623
+CVE-2026-73646
