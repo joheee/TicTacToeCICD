@@ -17,6 +17,9 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 # Set by CI to the git SHA; reported by /api/health.
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
+# Only the deploy workflow's "break_health" demo sets this to 1 (makes /api/health return 503).
+ARG FORCE_UNHEALTHY=0
+ENV FORCE_UNHEALTHY=$FORCE_UNHEALTHY
 
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static

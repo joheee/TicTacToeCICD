@@ -11,7 +11,7 @@ The project is split the way a client's setup usually is:
 | Repo | Holds | Changes when |
 |---|---|---|
 | **TicTacToeCICD** (this repo) | Next.js app, Dockerfile, Compose file, GitHub Actions workflows (CI, build, deploy, smoke test, rollback), README runbook | The app or the pipeline changes |
-| **tictactoe-infra** (Terraform) | Every AWS resource: ECR repo, EC2 instance with SSM, networking and security group, IAM instance role, GitHub OIDC provider and deploy role, SSM Parameter Store entries | The infrastructure changes |
+| **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)** (Terraform) | Every AWS resource: ECR repo, EC2 instance with SSM, networking and security group, IAM instance role, GitHub OIDC provider and deploy role, SSM Parameter Store entries | The infrastructure changes |
 
 This repo never creates AWS resources, by hand or by script. The pipeline only
 *uses* what Terraform created, through these values copied from
@@ -28,7 +28,7 @@ none of them are sensitive):
 | `SSM_PARAM_PREFIX` | `ssm_parameter_prefix` | Where the instance reads `.env` values (e.g. `/tictactoe/prod/`) |
 
 If the pipeline needs something new from AWS (a permission, a port, a
-parameter), the change goes into tictactoe-infra first and its output is added
+parameter), the change goes into TicTacToeInfra first and its output is added
 to the table above.
 
 ## The pitch (what a client buys)
@@ -67,7 +67,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
    git SHA, push to Amazon ECR.
 5. **Deploy to EC2 without SSH keys.** GitHub Actions authenticates to AWS with
    **OIDC** (no stored access keys), assuming the deploy role created by
-   tictactoe-infra, and deploys with **AWS SSM Run Command** (no port 22 open).
+   TicTacToeInfra, and deploys with **AWS SSM Run Command** (no port 22 open).
    The instance builds its `.env` from SSM Parameter Store, pulls the new tag
    and restarts the app container. Database migrations run before the new app
    container starts.
@@ -86,7 +86,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 
 - Kubernetes, ECS (those are projects 1 and 7).
 - Any Terraform or AWS resource creation in this repo. That lives in
-  tictactoe-infra; this repo only reads its outputs.
+  TicTacToeInfra; this repo only reads its outputs.
 - Fancy UI. Plain, clean pages are fine (Tailwind styling is already in; no more
   UI work).
 - More game features: game history page, replays, move-by-move storage,
@@ -94,30 +94,29 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 - Managed RDS. Postgres runs in Compose with a named volume, so the demo stays
   cheap; the README mentions RDS as the production upgrade.
 
-## Status (checked 28 Oct 2026)
+## Status (checked 30 Oct 2026)
 
 | # | Objective | State |
 |---|---|---|
 | 1 | Sample app | Done. Auth, game, leaderboard, `/api/health`, migrations `0000`–`0003`. |
 | 2 | Docker Compose | Done locally (db → migrate → app). Not run on EC2 yet. |
 | 3 | CI on pull requests | Done. `.github/workflows/ci.yml`: lint, type-check, test and a Docker build (`push: false`, tagged with the git SHA). Runs on PRs and pushes to `main`; green on `main`. |
-| 4 | Build and push to ECR | Not started. Needs tictactoe-infra outputs. |
-| 5 | Deploy to EC2 via SSM + OIDC | Not started. Needs tictactoe-infra outputs. |
-| 6 | Smoke test | Not started. |
-| 7 | Automatic rollback | Not started. |
-| 8 | Recorded bad deploy | Not started. |
-| 9 | Client-style README | Started. Local run and CI sections are written; diagram, deploy/rollback runbook, cost estimate and recording are still missing. |
+| 4 | Build and push to ECR | Written (`deploy.yml`), not yet run against AWS. |
+| 5 | Deploy to EC2 via SSM + OIDC | Written (`deploy/ssm-run.sh`, `deploy/remote/deploy.sh`), not yet run. |
+| 6 | Smoke test | Written (`deploy/smoke-test.sh`), not yet run. |
+| 7 | Automatic rollback | Written (`deploy/remote/rollback.sh`, `last_good_tag`), not yet run. |
+| 8 | Recorded bad deploy | Switch is in (`break_health` input, `FORCE_UNHEALTHY`); recording not made. |
+| 9 | Client-style README | Local run, CI, deploy, one-time setup and runbook are written; diagram, cost estimate and recording are still missing. |
 
-Blocked on: the tictactoe-infra repo (ECR, EC2, OIDC role, SSM parameters) and
-its outputs in this repo's GitHub Actions variables. Next in this repo once
-those exist: a separate release workflow (`deploy.yml`) for objectives 4–7.
+TicTacToeInfra is applied. Next: set the repository variables and Parameter
+Store values (README, "One-time setup"), then let the first deploy run.
 
 ## Plan (1–2 days)
 
 | When | Work |
 |---|---|
 | Day 1 morning ✓ | Next.js app: register/login/logout, Postgres schema + migrations, `/api/health`, Dockerfile (multi-stage, standalone output), `docker-compose.yml`. Runs locally. |
-| Day 1 afternoon (PR workflow ✓) | tictactoe-infra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow ✓ and build-push-deploy workflow working end to end. |
+| Day 1 afternoon (PR workflow ✓) | TicTacToeInfra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow ✓ and build-push-deploy workflow working end to end. |
 | Day 2 morning | Smoke test, automatic rollback, the "bad deploy" switch, rollback tested for real. |
 | Day 2 afternoon | README handover, architecture diagram, cost estimate, screen recording, Upwork portfolio entry. |
 
@@ -136,7 +135,7 @@ password hashing, httpOnly session cookies for auth.
 - [x] PR workflow runs lint, tests and a Docker build.
 - [ ] Merge to `main` builds, pushes to ECR and deploys to EC2 via SSM using OIDC.
 - [ ] Every AWS value the workflows use comes from a GitHub Actions variable
-      that matches a tictactoe-infra output; nothing AWS is created from here.
+      that matches a TicTacToeInfra output; nothing AWS is created from here.
 - [ ] Smoke test runs after every deploy.
 - [ ] A broken deploy rolls itself back to the previous image with no manual step.
 - [ ] No AWS keys, DB passwords or session secrets committed; secrets live in

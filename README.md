@@ -4,8 +4,8 @@ A small full-stack Next.js app (register/login, tic-tac-toe against a bot, Postg
 sample workload for a CI/CD pipeline: GitHub Actions → Amazon ECR → EC2 via AWS SSM.
 The pipeline is the point of the project; see `GOALS.md` for scope and status.
 
-AWS infrastructure lives in a separate Terraform repo, **tictactoe-infra**. This repo never creates
-AWS resources.
+AWS infrastructure lives in a separate Terraform repo, **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)**.
+This repo never creates AWS resources.
 
 ## Run locally
 
@@ -82,5 +82,62 @@ npm ci && npm run lint && npm run typecheck && npm test
 docker build --build-arg APP_VERSION=local -t tictactoe-app:check .
 ```
 
-Build, push to ECR, deploy, smoke test and rollback are not implemented yet; they will be added as
-separate workflows and documented here.
+## Deploy
+
+Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). It runs after **CI passes on a
+push to `main`** (never for PRs), or by hand from the Actions tab. Only one deploy runs at a time.
+
+| Step | What happens |
+|---|---|
+| AWS login | GitHub OIDC → the deploy role from TicTacToeInfra. No AWS keys are stored anywhere. |
+| Build and push | Same Dockerfile and `APP_VERSION` as CI, pushed to ECR as `<git SHA>`. Skipped if that tag is already in ECR (tags are immutable). |
+| Deploy | [`deploy/ssm-run.sh`](deploy/ssm-run.sh) sends [`deploy/remote/deploy.sh`](deploy/remote/deploy.sh) and `docker-compose.yml` to the instance with SSM Run Command (no SSH). On the instance it writes `/opt/app/.env` from Parameter Store, logs in to ECR, pulls, runs the `migrate` service, then starts the new app. |
+| Smoke test | [`deploy/smoke-test.sh`](deploy/smoke-test.sh) checks `APP_URL/api/health` returns 200 with `"version": "<git SHA>"` and `/login` returns 200, retrying for up to 2 minutes. |
+| Mark good | Writes the SHA to `/opt/app/last_good_tag` (history in `/opt/app/deploy_history`). |
+| Rollback | If the deploy or smoke test fails: redeploys `last_good_tag`, smoke tests it, and the run ends red. |
+
+### One-time setup
+
+1. Apply TicTacToeInfra.
+2. Set the real values in Parameter Store (in TicTacToeInfra's region). Use a URL-safe password,
+   for example `openssl rand -hex 24`, because it goes into `DATABASE_URL`:
+
+   ```bash
+   aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_USER     --value app
+   aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_DB       --value tictactoe
+   aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_PASSWORD --value "$(openssl rand -hex 24)"
+   ```
+
+   Postgres only reads these on its very first start. Changing the password later also needs
+   `ALTER USER` inside the database.
+3. In this repo, go to **Settings → Secrets and variables → Actions → Variables** and add these
+   repository variables from `terraform output` in TicTacToeInfra:
+
+   | Variable | Terraform output |
+   |---|---|
+   | `AWS_REGION` | `aws_region` |
+   | `AWS_DEPLOY_ROLE_ARN` | `github_deploy_role_arn` |
+   | `ECR_REPOSITORY_URL` | `ecr_repository_url` |
+   | `EC2_INSTANCE_ID` | `instance_id` |
+   | `APP_URL` | `app_url` |
+   | `SSM_PARAM_PREFIX` | `ssm_parameter_prefix` |
+
+4. Re-run the latest CI run on `main` (or push a commit). The first deploy has no rollback target
+   until it passes.
+
+### Runbook
+
+- **Deploy:** merge to `main`. Watch the run under Actions → Deploy.
+- **Redeploy the current commit:** Actions → Deploy → Run workflow (leave `break_health` off).
+- **Roll back by hand:** revert the bad commit on `main`; CI and Deploy ship the revert. The
+  automatic rollback already covers failed deploys.
+- **Rollback demo:** Actions → Deploy → Run workflow with `break_health` on. It ships
+  `<git SHA>-broken`, where `/api/health` returns 503, and you can watch the job roll back to the last
+  good tag.
+- **Migrations:** they run before the new app starts, and a rollback does not undo them, so schema
+  changes must work with the previous app version (add columns as nullable or with defaults).
+- **Look at the instance:** AWS console → Systems Manager → Session Manager, then
+  `sudo docker compose -f /opt/app/docker-compose.yml ps` or `logs app`. Don't print `/opt/app/.env`;
+  it holds the database password.
+- **Rotate the DB password:** `ALTER USER` in Postgres, update `POSTGRES_PASSWORD` in Parameter Store,
+  then redeploy.
