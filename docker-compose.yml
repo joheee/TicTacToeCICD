@@ -1,4 +1,5 @@
-# Same file locally and on EC2. Only .env values and IMAGE_TAG change.
+# Same file locally and on EC2. 
+# Only .env values and IMAGE_TAG change.
 name: tictactoe-app
 
 services:
