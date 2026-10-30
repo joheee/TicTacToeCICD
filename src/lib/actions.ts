@@ -22,6 +22,7 @@ export async function register(_: FormState, form: FormData): Promise<FormState>
     return { error: "Username must be 3-20 characters: letters, numbers, underscore." };
   }
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (password !== String(form.get("confirmPassword") ?? "")) return { error: "Passwords do not match." };
 
   const passwordHash = await bcrypt.hash(password, 10);
   const [created] = await db

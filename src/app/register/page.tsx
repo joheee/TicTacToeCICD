@@ -15,6 +15,7 @@ export default async function RegisterPage() {
       altHref="/login"
       altLabel="Have an account? Log in"
       passwordAutoComplete="new-password"
+      confirmPassword
     />
   );
 }

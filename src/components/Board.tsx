@@ -34,45 +34,58 @@ export default function Board({ initialScore, initialBoard }: { initialScore: Sc
   };
 
   const stats = [
-    { label: "Wins", value: score.wins, tone: "text-ok" },
-    { label: "Losses", value: score.losses, tone: "text-err" },
-    { label: "Draws", value: score.draws, tone: "text-muted" },
+    { label: "Wins", value: score.wins, tone: "text-ok", bar: "bg-ok" },
+    { label: "Losses", value: score.losses, tone: "text-err", bar: "bg-err" },
+    { label: "Draws", value: score.draws, tone: "text-muted", bar: "bg-muted" },
   ];
 
+  const status = error || (outcome ? MESSAGES[outcome] : pending ? "Bot is thinking…" : "Your turn");
+  const statusTone = error ? "text-err" : outcome ? TONE[outcome] : "text-foreground";
+  const lineTone = outcome === "loss" ? "border-err bg-err/15 text-err" : "border-ok bg-ok/15 text-ok";
+
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-xl shadow-black/20 sm:p-6">
+    <section className="w-full rounded-3xl border border-border bg-card/90 p-5 shadow-2xl shadow-black/30 backdrop-blur sm:p-7">
       <div className="grid grid-cols-3 gap-3">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-border bg-background px-3 py-2 text-center">
-            <div className={`font-mono text-2xl font-semibold ${s.tone}`}>{s.value}</div>
-            <div className="text-xs text-muted">{s.label}</div>
+          <div key={s.label} className="relative overflow-hidden rounded-xl border border-border bg-background/70 px-3 pb-2.5 pt-3.5 text-center">
+            <span className={`absolute inset-x-0 top-0 h-0.5 ${s.bar}`} />
+            <div className={`font-mono text-2xl font-semibold tabular-nums ${s.tone}`}>{s.value}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted">{s.label}</div>
           </div>
         ))}
       </div>
 
-      <p
-        aria-live="polite"
-        className={`mt-5 h-6 text-center font-medium ${error ? "text-err" : outcome ? TONE[outcome] : "text-muted"}`}
-      >
-        {error || (outcome ? MESSAGES[outcome] : pending ? "Bot is thinking…" : "Your turn — you are X")}
-      </p>
+      <div className="mt-6 flex justify-center">
+        <p
+          aria-live="polite"
+          className={`inline-flex min-h-9 items-center gap-2 rounded-full border border-border bg-background/70 px-4 py-1.5 text-sm font-medium ${statusTone}`}
+        >
+          {!outcome && !error && (
+            <span className={`size-2 rounded-full ${pending ? "pulse-dot bg-o" : "bg-accent"}`} />
+          )}
+          {status}
+          {!outcome && !error && !pending && <span className="font-mono text-xs text-muted">you are X</span>}
+        </p>
+      </div>
 
-      <div className="mx-auto my-4 grid w-fit grid-cols-3 gap-2.5">
+      <div className="mx-auto my-6 grid w-fit grid-cols-3 gap-3">
         {board.map((cell, i) => {
           const hit = line?.includes(i);
+          const open = !cell && !outcome;
           return (
             <button
               key={i}
               onClick={() => play(i)}
               disabled={!!cell || !!outcome}
               aria-label={`cell ${i + 1}${cell ? `, ${cell}` : ""}`}
-              className={`flex size-20 items-center justify-center rounded-xl border text-4xl font-bold transition sm:size-24 ${
+              className={`group flex size-[5.25rem] items-center justify-center rounded-2xl border text-5xl font-bold transition duration-150 sm:size-28 sm:text-6xl ${
                 hit
-                  ? "border-accent bg-accent/20"
-                  : "border-border bg-background enabled:cursor-pointer enabled:hover:border-accent/60 enabled:hover:bg-accent/10"
-              } ${cell === "X" ? "text-accent" : "text-foreground"}`}
+                  ? `win-line ${lineTone}`
+                  : "border-border bg-background/70 enabled:cursor-pointer enabled:hover:-translate-y-0.5 enabled:hover:border-accent/70 enabled:hover:bg-accent/10"
+              } ${!hit && cell === "X" ? "text-accent" : ""} ${!hit && cell === "O" ? "text-o" : ""}`}
             >
-              {cell && <span className="pop">{cell}</span>}
+              {cell && <span className={`pop ${cell === "X" ? "mark-x" : "mark-o"}`}>{cell}</span>}
+              {open && <span className="text-accent opacity-0 transition group-hover:opacity-25">X</span>}
             </button>
           );
         })}
@@ -80,8 +93,10 @@ export default function Board({ initialScore, initialBoard }: { initialScore: Sc
 
       <button
         onClick={reset}
-        className={`mx-auto block cursor-pointer rounded-lg border border-border px-4 py-2 text-sm text-muted transition hover:border-accent hover:text-foreground ${
-          outcome ? "blink" : ""
+        className={`mx-auto block cursor-pointer rounded-xl border px-5 py-2.5 text-sm font-medium transition ${
+          outcome
+            ? "blink border-accent/60 bg-accent/10 text-foreground hover:border-accent"
+            : "border-border text-muted hover:border-accent hover:text-foreground"
         }`}
       >
         New game
