@@ -4,6 +4,8 @@ A small full-stack Next.js app (register/login, tic-tac-toe against a bot, Postg
 sample workload for a CI/CD pipeline: GitHub Actions → Amazon ECR → EC2 via AWS SSM.
 The pipeline is the point of the project; see `GOALS.md` for scope and status.
 
+Live demo: <https://tictactoe.johe.my.id> (HTTPS through Caddy on the EC2 instance).
+
 AWS infrastructure lives in a separate Terraform repo, **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)**.
 This repo never creates AWS resources.
 
@@ -86,6 +88,8 @@ every push to `main`, and it never deploys or touches AWS (no credentials, no se
   dependencies (it ignores dev-only tools such as `vitest`, which never reach the image). The Trivy
   exceptions are in [`.trivyignore`](.trivyignore), each with the reason; the file is empty today. Remove an
   entry when its fix ships.
+- **Base image.** The Dockerfile stays on Node 22 LTS to match CI. Close a Dependabot PR that jumps the
+  base image to a newer major unless the CI Node version moves with it.
 - **Smaller image.** The runner stage deletes npm, npx, corepack and yarn. The app only needs `node`, and the
   package manager's own bundled dependencies were most of the image's findings.
 - **Credentials.** Checkouts use `persist-credentials: false`, and the workflows' `GITHUB_TOKEN` is read-only
@@ -114,6 +118,9 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
 | AWS login | GitHub OIDC → the deploy role from TicTacToeInfra. No AWS keys are stored anywhere. |
 | Build and push | Same Dockerfile and `APP_VERSION` as CI, pushed to ECR as `<git SHA>`. Skipped if that tag is already in ECR (tags are immutable). |
 | Deploy | [`deploy/ssm-run.sh`](deploy/ssm-run.sh) sends [`deploy/remote/deploy.sh`](deploy/remote/deploy.sh), `docker-compose.yml` and the `Caddyfile` to the instance with SSM Run Command (no SSH). On the instance it writes `/opt/app/.env` from Parameter Store, logs in to ECR, pulls, runs the `migrate` service, then starts the new app and the Caddy proxy. |
+| Smoke test | [`deploy/smoke-test.sh`](deploy/smoke-test.sh) checks `APP_URL/api/health` returns 200 with `"version": "<git SHA>"` and `/login` returns 200, retrying for up to 2 minutes. |
+| Mark good | Writes the SHA to `/opt/app/last_good_tag` (history in `/opt/app/deploy_history`). |
+| Rollback | If the deploy or smoke test fails: redeploys `last_good_tag`, smoke tests it, and the run ends red. |
 
 ### HTTPS
 
@@ -128,9 +135,22 @@ The app port is bound to `127.0.0.1` only, so the proxy is the only way in from 
 The proxy is a Compose profile: off for a local `docker compose up`, on for EC2 (the deploy sets
 `COMPOSE_PROFILES=proxy` in `.env`). The site name comes from `SITE_ADDRESS`; production uses
 `tictactoe.johe.my.id`.
-| Smoke test | [`deploy/smoke-test.sh`](deploy/smoke-test.sh) checks `APP_URL/api/health` returns 200 with `"version": "<git SHA>"` and `/login` returns 200, retrying for up to 2 minutes. |
-| Mark good | Writes the SHA to `/opt/app/last_good_tag` (history in `/opt/app/deploy_history`). |
-| Rollback | If the deploy or smoke test fails: redeploys `last_good_tag`, smoke tests it, and the run ends red. |
+
+Try the proxy locally with `COMPOSE_PROFILES=proxy docker compose up --build` and open <https://localhost>
+(Caddy issues a local certificate; your browser will ask you to trust it).
+
+### App protection
+
+The app itself guards the two public forms (`src/lib/actions.ts`, `src/lib/rateLimit.ts`):
+
+- **Rate limits.** Login: 10 failed attempts per IP and 10 per username in 15 minutes. Register: 10 attempts
+  per IP per hour. The client IP comes from `X-Forwarded-For`, which Caddy sets itself (it drops any value
+  the client sends). The counters live in memory, so a deploy resets them.
+- **No username leak.** Login always runs a bcrypt compare (against a dummy hash when the user does not
+  exist), so response time does not reveal which usernames exist.
+- **Password limits.** 8 to 72 bytes (bcrypt ignores everything after 72); register asks for the password
+  twice and the server checks that they match.
+
 
 ### One-time setup
 
@@ -175,6 +195,11 @@ The proxy is a Compose profile: off for a local `docker compose up`, on for EC2 
 - **Rollback demo:** Actions → Deploy → Run workflow with `break_health` on. It ships
   `<git SHA>-broken`, where `/api/health` returns 503, and you can watch the job roll back to the last
   good tag.
+- **Public link:** the site is shared publicly, so don't run the `break_health` demo while people are using
+  it (it serves 503 for a couple of minutes), and keep every Parameter Store value real: no `CHANGE_ME`.
+- **Locked out by the rate limit:** wait 15 minutes, or redeploy (the counters are in memory).
+- **Dependabot PRs:** each one runs the full CI (audit, secret scan, image scan). Merge a green PR after a
+  quick look at the changelog; a merge to `main` deploys it like any other change.
 - **Migrations:** they run before the new app starts, and a rollback does not undo them, so schema
   changes must work with the previous app version (add columns as nullable or with defaults).
 - **Look at the instance:** AWS console → Systems Manager → Session Manager, then
