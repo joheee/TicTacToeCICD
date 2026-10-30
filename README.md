@@ -91,7 +91,17 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
 |---|---|
 | AWS login | GitHub OIDC → the deploy role from TicTacToeInfra. No AWS keys are stored anywhere. |
 | Build and push | Same Dockerfile and `APP_VERSION` as CI, pushed to ECR as `<git SHA>`. Skipped if that tag is already in ECR (tags are immutable). |
-| Deploy | [`deploy/ssm-run.sh`](deploy/ssm-run.sh) sends [`deploy/remote/deploy.sh`](deploy/remote/deploy.sh) and `docker-compose.yml` to the instance with SSM Run Command (no SSH). On the instance it writes `/opt/app/.env` from Parameter Store, logs in to ECR, pulls, runs the `migrate` service, then starts the new app. |
+| Deploy | [`deploy/ssm-run.sh`](deploy/ssm-run.sh) sends [`deploy/remote/deploy.sh`](deploy/remote/deploy.sh), `docker-compose.yml` and the `Caddyfile` to the instance with SSM Run Command (no SSH). On the instance it writes `/opt/app/.env` from Parameter Store, logs in to ECR, pulls, runs the `migrate` service, then starts the new app and the Caddy proxy. |
+
+### HTTPS
+
+A [Caddy](https://caddyserver.com) container (`proxy` service, [`Caddyfile`](Caddyfile)) terminates TLS on
+ports 80 and 443 and forwards to the app on the Compose network. It gets and renews its Let's Encrypt
+certificate by itself (stored in the `caddy_data` volume) and redirects `http://` to `https://`.
+The app port is bound to `127.0.0.1` only, so the proxy is the only way in from outside.
+The proxy is a Compose profile: off for a local `docker compose up`, on for EC2 (the deploy sets
+`COMPOSE_PROFILES=proxy` in `.env`). The site name comes from `SITE_ADDRESS`; production uses
+`tictactoe.johe.my.id`.
 | Smoke test | [`deploy/smoke-test.sh`](deploy/smoke-test.sh) checks `APP_URL/api/health` returns 200 with `"version": "<git SHA>"` and `/login` returns 200, retrying for up to 2 minutes. |
 | Mark good | Writes the SHA to `/opt/app/last_good_tag` (history in `/opt/app/deploy_history`). |
 | Rollback | If the deploy or smoke test fails: redeploys `last_good_tag`, smoke tests it, and the run ends red. |
@@ -106,7 +116,12 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
    aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_USER     --value app
    aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_DB       --value tictactoe
    aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/POSTGRES_PASSWORD --value "$(openssl rand -hex 24)"
+   aws ssm put-parameter --overwrite --type SecureString --name /tictactoe/prod/SITE_ADDRESS      --value tictactoe.johe.my.id
    ```
+
+   Point the DNS **A record** for `tictactoe.johe.my.id` at the instance's public IP before the first
+   deploy; Caddy cannot get a certificate until it resolves. TicTacToeInfra must allow inbound TCP 80
+   and 443 on the instance's security group (port 80 is needed for the certificate challenge).
 
    Postgres only reads these on its very first start. Changing the password later also needs
    `ALTER USER` inside the database.
@@ -119,7 +134,7 @@ push to `main`** (never for PRs), or by hand from the Actions tab. Only one depl
    | `AWS_DEPLOY_ROLE_ARN` | `github_deploy_role_arn` |
    | `ECR_REPOSITORY_URL` | `ecr_repository_url` |
    | `EC2_INSTANCE_ID` | `instance_id` |
-   | `APP_URL` | `app_url` |
+   | `APP_URL` | `app_url` (must be `https://tictactoe.johe.my.id`) |
    | `SSM_PARAM_PREFIX` | `ssm_parameter_prefix` |
 
 4. Re-run the latest CI run on `main` (or push a commit). The first deploy has no rollback target

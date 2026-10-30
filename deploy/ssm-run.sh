@@ -5,7 +5,7 @@
 # Usage: deploy/ssm-run.sh <deploy|rollback|mark-good> [KEY=VALUE ...]
 # Needs: AWS credentials (the deploy role), AWS_REGION, EC2_INSTANCE_ID.
 #
-# The compose file and the remote scripts are sent inside the command as a gzipped tarball,
+# The compose file, the Caddyfile and the remote scripts are sent inside the command as a gzipped tarball,
 # so the instance needs no git checkout and no S3 bucket.
 set -euo pipefail
 
@@ -16,7 +16,7 @@ shift
 root=$(git rev-parse --show-toplevel)
 [ -f "$root/deploy/remote/$action.sh" ] || { echo "Unknown action: $action" >&2; exit 2; }
 
-bundle=$(tar -czf - -C "$root" docker-compose.yml deploy/remote | base64 -w0)
+bundle=$(tar -czf - -C "$root" docker-compose.yml Caddyfile deploy/remote | base64 -w0)
 
 exports=""
 for kv in "$@"; do

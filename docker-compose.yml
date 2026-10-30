@@ -38,8 +38,9 @@ services:
   app:
     image: ${IMAGE_REPO:-tictactoe-app}:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    # Loopback only: the proxy (EC2) or your browser (local) is the way in, never the public internet.
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -47,5 +48,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # HTTPS in front of the app. Off locally; on EC2 the deploy sets COMPOSE_PROFILES=proxy in .env.
+  proxy:
+    profiles: [proxy]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep this volume or Let's Encrypt rate limits kick in
+      - caddy_config:/config
+    depends_on:
+      - app
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

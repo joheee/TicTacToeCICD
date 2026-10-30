@@ -10,24 +10,26 @@ bundle=$(cd "$(dirname "$0")/../.." && pwd)
 app=/opt/app
 install -d -m 755 "$app"
 install -m 644 "$bundle/docker-compose.yml" "$app/docker-compose.yml"
+install -m 644 "$bundle/Caddyfile" "$app/Caddyfile"
 
-# .env from Parameter Store (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, COOKIE_SECURE, ...).
+# .env from Parameter Store (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, SITE_ADDRESS, ...).
 umask 077
 env_file=$(mktemp)
 aws ssm get-parameters-by-path --region "$AWS_REGION" --path "$SSM_PARAM_PREFIX" \
   --with-decryption --query 'Parameters[].[Name,Value]' --output text |
   awk -F'\t' '{ name = $1; sub(/.*\//, "", name); print name "=" $2 }' > "$env_file"
 
-for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB; do
+for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SITE_ADDRESS; do
   grep -q "^$key=" "$env_file" || { echo "Missing parameter $SSM_PARAM_PREFIX/$key" >&2; exit 1; }
 done
 if grep -q '=CHANGE_ME$' "$env_file"; then
   echo "Warning: some parameters under $SSM_PARAM_PREFIX still hold the CHANGE_ME placeholder." >&2
 fi
 
-grep -q '^APP_PORT=' "$env_file" || echo "APP_PORT=80" >> "$env_file"
-grep -q '^COOKIE_SECURE=' "$env_file" || echo "COOKIE_SECURE=false" >> "$env_file"
-printf 'IMAGE_REPO=%s\nIMAGE_TAG=%s\n' "$IMAGE_REPO" "$IMAGE_TAG" >> "$env_file"
+grep -q '^APP_PORT=' "$env_file" || echo "APP_PORT=3000" >> "$env_file"
+# Caddy terminates TLS, so the session cookie is HTTPS-only.
+grep -q '^COOKIE_SECURE=' "$env_file" || echo "COOKIE_SECURE=true" >> "$env_file"
+printf 'COMPOSE_PROFILES=proxy\nIMAGE_REPO=%s\nIMAGE_TAG=%s\n' "$IMAGE_REPO" "$IMAGE_TAG" >> "$env_file"
 mv "$env_file" "$app/.env"
 umask 022
 
