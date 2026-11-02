@@ -4,14 +4,17 @@ This repo is portfolio project #4 for my Upwork DevOps profile. The point of the
 project is the **pipeline**, not the app. A client should be able to look at this
 repo and think "this person can set up CI/CD for my EC2 app in 48 hours".
 
-## Two repos
+## Repos
 
-The project is split the way a client's setup usually is:
+The project is split the way a client's setup usually is. Since 2 Nov 2026 the
+app is also moving to a DigitalOcean Droplet (portfolio project #2); this repo
+owns that pipeline too.
 
 | Repo | Holds | Changes when |
 |---|---|---|
 | **TicTacToeCICD** (this repo) | Next.js app, Dockerfile, Compose file, GitHub Actions workflows (CI, build, deploy, smoke test, rollback), README runbook | The app or the pipeline changes |
 | **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)** (Terraform) | Every AWS resource: ECR repo, EC2 instance with SSM, networking and security group, IAM instance role, GitHub OIDC provider and deploy role, SSM Parameter Store entries | The infrastructure changes |
+| **[TicTacToeVpsMigration](https://github.com/joheee/TicTacToeVpsMigration)** (Terraform, project 2) | Every DigitalOcean resource: Droplet, VPC, Cloud Firewall, reserved IP, Spaces backup bucket; cloud-init hardening (deploy user, Docker, Tailscale); cutover and rollback runbooks | The VPS infrastructure or the cutover plan changes |
 
 This repo never creates AWS resources, by hand or by script. The pipeline only
 *uses* what Terraform created, through these values copied from
@@ -30,6 +33,26 @@ none of them are sensitive):
 If the pipeline needs something new from AWS (a permission, a port, a
 parameter), the change goes into TicTacToeInfra first and its output is added
 to the table above.
+
+The DigitalOcean pipeline reads TicTacToeVpsMigration's outputs the same way,
+as repository variables:
+
+| Variable | Terraform output (TicTacToeVpsMigration) | Used for |
+|---|---|---|
+| `DO_DROPLET_IP` | `droplet_ipv4` | Reference only (DNS points here) |
+| `DO_TAILSCALE_HOST` | `tailscale_hostname` | SSH target over the tailnet |
+| `DO_DEPLOY_USER` | `deploy_user` | SSH user for deploys and backups |
+| `DO_APP_URL` | `app_url` | Public smoke test |
+| `DO_BACKUP_BUCKET` | `backup_bucket` | Where nightly `pg_dump` files go |
+| `DO_SPACES_ENDPOINT` | `spaces_endpoint` | S3-compatible endpoint for that bucket |
+
+Secrets for the DigitalOcean path live in a `digitalocean` GitHub Environment,
+not in the repository: the Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
+`TS_OAUTH_SECRET`), the deploy SSH key (`DO_SSH_PRIVATE_KEY`, plus
+`DO_SSH_KNOWN_HOSTS`), the app's `.env` values (`POSTGRES_USER`,
+`POSTGRES_PASSWORD`, `POSTGRES_DB`, `SITE_ADDRESS`) and the Spaces keys for
+backups. DigitalOcean has no OIDC, so these are the one place stored
+credentials are allowed.
 
 ## The pitch (what a client buys)
 
@@ -95,11 +118,53 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
     `npm audit`, a gitleaks scan of the history and a Trivy scan of the image, all
     in `ci.yml` with no AWS access.
 
+### DigitalOcean target (project 2)
+
+12. **Image to GHCR.** `deploy.yml` (and later `deploy-do.yml`) pushes the same
+    `<git SHA>` image to GitHub Container Registry next to ECR, built once from
+    the same Dockerfile and `APP_VERSION`. `linux/amd64` only (DigitalOcean has
+    no ARM Droplets). The GHCR package is public, so the Droplet pulls without
+    registry credentials; nothing secret is in the image.
+13. **Deploy to the Droplet over Tailscale.** `deploy-do.yml` joins the tailnet
+    with the Tailscale GitHub Action (ephemeral, tagged node), SSHes to
+    `DO_TAILSCALE_HOST` as `DO_DEPLOY_USER` with a pinned host key, copies
+    `docker-compose.yml`, `Caddyfile` and `deploy/remote/`, writes `.env` from
+    the `digitalocean` Environment secrets (mode 600, never printed), pulls the
+    GHCR tag, runs migrations and restarts. No public SSH, no AWS calls.
+14. **Same smoke test and rollback.** `deploy/smoke-test.sh` against
+    `DO_APP_URL`; on failure redeploy `last_good_tag` on the Droplet and fail
+    the run. The `deploy/remote/` scripts get an image-source and env-source
+    switch so one copy serves both EC2 (ECR + Parameter Store) and the Droplet
+    (GHCR + `.env` from the workflow). One logged `break_health` rollback on the
+    Droplet is the proof, run on the rehearsal subdomain.
+15. **Cloudflare in front.** Caddy trusts Cloudflare's IP ranges
+    (`trusted_proxies`) so the app's per-IP login rate limit sees the real
+    client address, and serves a certificate that works with Cloudflare Full
+    (strict).
+16. **Nightly backup with a tested restore.** `backup-do.yml` on a schedule
+    SSHes in over Tailscale and runs `deploy/remote/backup.sh`, which streams
+    `pg_dump` (custom format, compressed) to `DO_BACKUP_BUCKET`. The bucket's
+    lifecycle rule (project 2) keeps 7 days. One restore into a throwaway
+    container with row counts checked is logged in the README.
+17. **Uptime check.** A free external monitor (Uptime Kuma on another host or
+    a hosted free tier) on `/api/health` that alerts by email or Telegram.
+18. **Cutover switch.** Until cutover, `deploy-do.yml` runs only by hand
+    (`workflow_dispatch`), so production stays on EC2 and only one database
+    takes writes. On cutover day it becomes the `workflow_run` deploy after
+    CI, `deploy.yml` is disabled, and `APP_URL` points at the Droplet. After
+    TicTacToeInfra is destroyed, the AWS workflow, ECR push and AWS variables
+    are removed and the README's diagram, setup and cost sections switch to
+    DigitalOcean (the AWS version stays in git history and in project 2's
+    "before" picture).
+
 ## Out of scope
 
 - Kubernetes, ECS (those are projects 1 and 7).
-- Any Terraform or AWS resource creation in this repo. That lives in
-  TicTacToeInfra; this repo only reads its outputs.
+- Any Terraform or AWS or DigitalOcean resource creation in this repo. That
+  lives in TicTacToeInfra and TicTacToeVpsMigration; this repo only reads
+  their outputs.
+- The cutover itself (DNS flip, final `pg_dump` from EC2 and restore, downtime
+  measurement). That runbook lives in TicTacToeVpsMigration.
 - More UI work. The one polish pass is done (31 Oct 2026); the UI is frozen again.
 - More game features: game history page, replays, move-by-move storage,
   multiplayer. The app is done; spend the remaining time on the pipeline.
@@ -122,6 +187,8 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
 
+| 12–18 | DigitalOcean target (project 2) | Not started. Waits for TicTacToeVpsMigration's first apply and outputs. |
+
 Open items:
 
 - Parameter Store still holds a `CHANGE_ME` placeholder (the deploy log warns about
@@ -142,10 +209,13 @@ Open items:
 | Day 1 afternoon ✓ | TicTacToeInfra applied (see that repo's GOALS.md); its outputs copied into this repo's GitHub Actions variables. PR workflow ✓ and build-push-deploy workflow working end to end ✓. |
 | Day 2 morning ✓ | Smoke test, automatic rollback, the "bad deploy" switch, rollback tested for real. Plus HTTPS (Caddy) and the supply-chain checks. |
 | Day 2 afternoon | README handover, architecture diagram, cost estimate, Upwork portfolio entry. |
+| Project 2, day 2 | GHCR push, `deploy-do.yml` with smoke test and rollback, Caddy `trusted_proxies`, `backup-do.yml` with a tested restore, uptime check. Rehearsal on the `vps.` subdomain. |
+| Project 2, day 3 | Cutover switch (objective 18), then remove the AWS path after TicTacToeInfra is destroyed. |
 
 ## Tools and software
 
 GitHub Actions · Docker · Docker Compose · Amazon ECR · Amazon EC2 ·
+GitHub Container Registry · DigitalOcean Droplet · Tailscale · Cloudflare ·
 AWS SSM (Run Command) · AWS IAM OIDC · Next.js 16 (App Router, TypeScript) ·
 PostgreSQL · Caddy (HTTPS) · Dependabot · gitleaks · Trivy · curl smoke tests ·
 draw.io for the diagram
@@ -168,3 +238,14 @@ password hashing, httpOnly session cookies for auth.
 - [x] The site is served over HTTPS with security headers.
 - [x] CI scans dependencies, the git history and the image; actions are pinned.
 - [x] README has the diagram, runbook, rollback steps, cost estimate and a link to the rolled-back run.
+
+DigitalOcean target (project 2):
+
+- [ ] Every image is pushed to GHCR with the same SHA tag as ECR, from one build.
+- [ ] `deploy-do.yml` deploys to the Droplet over Tailscale with no public SSH and no AWS access; `.env` comes from the `digitalocean` Environment and is never printed.
+- [ ] Every DigitalOcean value comes from a variable that matches a TicTacToeVpsMigration output; nothing DigitalOcean is created from here.
+- [ ] A broken deploy on the Droplet rolls itself back (one logged run).
+- [ ] Caddy trusts Cloudflare's ranges; the login rate limit sees real client IPs.
+- [ ] Nightly `pg_dump` lands in the backup bucket and one restore has been tested.
+- [ ] An uptime check alerts when `/api/health` fails.
+- [ ] After cutover, merges deploy only to the Droplet; after AWS is destroyed, the AWS path is removed and the README describes the DigitalOcean setup.

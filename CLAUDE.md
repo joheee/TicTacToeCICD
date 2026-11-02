@@ -13,7 +13,11 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
 - Deploys go GitHub Actions → Amazon ECR → EC2 via AWS SSM, authenticated with
   GitHub OIDC.
 - AWS infrastructure lives in a separate Terraform repo, **TicTacToeInfra**.
-  This repo only uses its outputs (see "Two repos" in `GOALS.md`).
+  This repo only uses its outputs (see "Repos" in `GOALS.md`).
+- Portfolio project #2 moves the app to a DigitalOcean Droplet built by
+  **TicTacToeVpsMigration**. The pipeline for that target (GHCR push,
+  `deploy-do.yml`, `backup-do.yml`) lives here; the Droplet, firewall, bucket
+  and cutover runbook live there. GOALS.md objectives 12–18.
 - The site is public (shared on social media), so treat it as exposed: no
   placeholder secrets, and don't run the `break_health` demo while the link is
   being shared.
@@ -35,6 +39,33 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
   values (both are in place).
 - Do not add `environment:` to the deploy job. It changes the OIDC subject
   claim and the deploy role, which trusts `main`, would refuse the login.
+
+## DigitalOcean boundary
+
+- Never create, change or delete DigitalOcean, Tailscale or Cloudflare
+  resources from this repo. If the pipeline needs a port, user, tag or bucket,
+  stop and say what TicTacToeVpsMigration must add (resource and output name).
+- Read DigitalOcean values from `vars.DO_DROPLET_IP`, `vars.DO_TAILSCALE_HOST`,
+  `vars.DO_DEPLOY_USER`, `vars.DO_APP_URL`, `vars.DO_BACKUP_BUCKET` and
+  `vars.DO_SPACES_ENDPOINT`. Never hard-code IPs, hostnames or bucket names.
+- Secrets for this path (Tailscale OAuth client, deploy SSH key and known
+  hosts, `POSTGRES_*`, `SITE_ADDRESS`, Spaces keys) live only in the
+  `digitalocean` GitHub Environment. The DigitalOcean jobs use
+  `environment: digitalocean`; the "no `environment:`" rule above applies only
+  to the AWS deploy job.
+- SSH reaches the Droplet only over Tailscale, as the deploy user, with a
+  pinned host key (`StrictHostKeyChecking yes`). Never open port 22 or
+  disable host key checking.
+- Images are `linux/amd64`, built once and pushed to both ECR and GHCR with
+  the same SHA tag. The DigitalOcean deploy must ship the exact image CI
+  checked.
+- Until cutover, `deploy-do.yml` is `workflow_dispatch` only, so production
+  keeps one database (EC2). Don't put it on `workflow_run` or disable
+  `deploy.yml` until asked on cutover day. Keep the AWS path working until
+  TicTacToeInfra is destroyed.
+- `deploy/remote/` scripts are shared by both targets. Add an image-source and
+  env-source switch rather than forking them, and test both paths after any
+  change. They must never print `.env`.
 
 ## App state
 
@@ -106,7 +137,8 @@ actions in `src/lib/play.ts` and `src/lib/actions.ts`, schema in
 
 ## Working rules
 
-- Never commit secrets: no AWS keys, DB passwords or session secrets. Use
+- Never commit secrets: no AWS keys, DigitalOcean tokens, Spaces keys,
+  Tailscale keys, SSH private keys, DB passwords or session secrets. Use
   `.env.example` with placeholders, GitHub Actions secrets and SSM Parameter Store.
 - Keep the app small. Don't add features that aren't in `GOALS.md`.
 - Image tags are the git SHA. Never deploy `latest`.
