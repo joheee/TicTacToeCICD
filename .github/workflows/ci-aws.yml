@@ -7,6 +7,8 @@ on:
   # PRs always run, so the required checks can report. A push that only changes Markdown skips CI,
   # and with it the Deploy workflow, which follows CI.
   pull_request:
+  # Lets ci-do.yml run the very same checks for the DigitalOcean target.
+  workflow_call:
   push:
     branches: [main]
     paths-ignore: ['**.md']
@@ -15,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   # Cancel superseded PR runs, but let every push to main finish.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 

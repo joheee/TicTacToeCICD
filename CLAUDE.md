@@ -42,20 +42,23 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
 
 ## DigitalOcean boundary
 
-- Never create, change or delete DigitalOcean, Tailscale or Cloudflare
+- Never create, change or delete DigitalOcean or Cloudflare
   resources from this repo. If the pipeline needs a port, user, tag or bucket,
   stop and say what TicTacToeVpsMigration must add (resource and output name).
 - Read DigitalOcean values from `vars.DO_DROPLET_IP`, `vars.DO_TAILSCALE_HOST`,
   `vars.DO_DEPLOY_USER`, `vars.DO_APP_URL`, `vars.DO_BACKUP_BUCKET` and
   `vars.DO_SPACES_ENDPOINT`. Never hard-code IPs, hostnames or bucket names.
-- Secrets for this path (Tailscale OAuth client, deploy SSH key and known
+- Secrets for this path (deploy SSH key and known
   hosts, `POSTGRES_*`, `SITE_ADDRESS`, Spaces keys) live only in the
   `digitalocean` GitHub Environment. The DigitalOcean jobs use
   `environment: digitalocean`; the "no `environment:`" rule above applies only
   to the AWS deploy job.
-- SSH reaches the Droplet only over Tailscale, as the deploy user, with a
-  pinned host key (`StrictHostKeyChecking yes`). Never open port 22 or
-  disable host key checking.
+- SSH reaches the Droplet at the reserved IP (`vars.DO_TAILSCALE_HOST`, name
+  kept for the output contract; Tailscale is no longer used, decided in
+  TicTacToeVpsMigration because GitHub runners have no fixed IP), as the
+  deploy user, with a pinned host key (`StrictHostKeyChecking yes`). Port 22
+  is opened by TicTacToeVpsMigration (key-only, fail2ban), never from here.
+  Never disable host key checking.
 - Images are `linux/amd64`, built once and pushed to both ECR and GHCR with
   the same SHA tag. The DigitalOcean deploy must ship the exact image CI
   checked.
@@ -99,6 +102,13 @@ actions in `src/lib/play.ts` and `src/lib/actions.ts`, schema in
   `deploy/smoke-test.sh`, records `/opt/app/last_good_tag` with `mark-good`, and
   on failure runs `rollback`. The rollback was demonstrated for real with
   `break_health`. Keep AWS steps out of `ci-aws.yml`.
+- DigitalOcean path (written, not yet run against a Droplet): `ci-do.yml` is
+  manual and calls `ci-aws.yml` as a reusable workflow (`workflow_call`), so
+  keep that trigger. `deploy-do.yml` (`workflow_dispatch` only) builds
+  `linux/amd64`, pushes `<sha>` to GHCR, runs `deploy/ssh-run.sh deploy`
+  (tarball plus `.env` values over ssh stdin), smoke tests `DO_APP_URL`,
+  `mark-good`, and rolls back on failure. `deploy.sh` switches on
+  `ENV_SOURCE` (`ssm` default, `file`) and `REGISTRY` (`ecr` default, `ghcr`).
 - `deploy/ssm-run.sh` tars `docker-compose.yml`, `Caddyfile` and `deploy/remote/`
   into the SSM command, so scripts under `deploy/remote/` run on the instance as
   root. They must never print `.env`. The deploy role only allows ECR push,

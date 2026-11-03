@@ -1,0 +1,19 @@
+name: CI DO
+
+# CI for the DigitalOcean target. It runs the same checks as ci-aws.yml (lint, type-check, test, audit,
+# gitleaks, Docker build and Trivy scan) by calling it as a reusable workflow, so there is one copy to maintain.
+# Nothing is pushed or deployed from here, and it needs no DigitalOcean or AWS access.
+#
+# Until cutover only ci-aws.yml runs on PRs and pushes (production is still on EC2), so this one is manual.
+# On cutover day: give this file the pull_request and push triggers (paths-ignore '**.md') that ci-aws.yml
+# has, make deploy-do.yml follow it with workflow_run, and disable ci-aws.yml and deploy-aws.yml.
+# When the AWS path is removed, inline ci-aws.yml here instead of calling it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci-aws.yml

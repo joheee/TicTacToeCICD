@@ -1,0 +1,145 @@
+name: Deploy DO
+
+# Ships a commit to the DigitalOcean Droplet: build once, push to GHCR (tag = git SHA), deploy over SSH,
+# smoke test the public URL, and roll back to the last good tag if anything fails.
+# Until cutover this runs only by hand (workflow_dispatch), so production keeps one database (EC2).
+# On cutover day it moves to workflow_run after "CI DO" (see ci-do.yml). Don't do that before being asked.
+# SSH goes to the reserved IP as the deploy user with a pinned host key (StrictHostKeyChecking yes). Every
+# DigitalOcean value is a repository variable copied from TicTacToeVpsMigration's Terraform outputs; secrets
+# live only in the "digitalocean" Environment. Actions are pinned to commit SHAs (the tag is in the comment).
+on:
+  workflow_dispatch:
+    inputs:
+      break_health:
+        description: "Demo: ship a broken image (/api/health returns 503) to watch the automatic rollback. Use the rehearsal subdomain."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write # push to GHCR with the workflow's own token
+
+# One deploy at a time, and never cancel one halfway.
+concurrency:
+  group: deploy-do
+  cancel-in-progress: false
+
+env:
+  DO_SSH_HOST: ${{ vars.DO_TAILSCALE_HOST }} # output name kept for the contract; now the reserved IP
+  DO_DEPLOY_USER: ${{ vars.DO_DEPLOY_USER }}
+  DO_APP_URL: ${{ vars.DO_APP_URL }}
+
+jobs:
+  deploy:
+    name: Build, deploy, smoke test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: digitalocean
+    timeout-minutes: 30
+    env:
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      SITE_ADDRESS: ${{ secrets.SITE_ADDRESS }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check variables and secrets
+        env:
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for v in DO_SSH_HOST DO_DEPLOY_USER DO_APP_URL DO_SSH_PRIVATE_KEY DO_SSH_KNOWN_HOSTS \
+                   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SITE_ADDRESS; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing variables or secrets:$missing. Variables come from TicTacToeVpsMigration's terraform output, secrets from the digitalocean Environment (see README)."
+            exit 1
+          fi
+
+      - name: Image tag
+        id: meta
+        run: |
+          sha=$(git rev-parse HEAD)
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.break_health }}" = "true" ]; then
+            echo "tag=$sha-broken" >> "$GITHUB_OUTPUT"
+            echo "force_unhealthy=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$sha" >> "$GITHUB_OUTPUT"
+            echo "force_unhealthy=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # Tags are never overwritten, so a re-run for the same commit reuses the image it already pushed.
+      - name: Check for an existing image
+        id: existing
+        run: |
+          if docker buildx imagetools inspect "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image ${{ steps.meta.outputs.tag }} is already in GHCR, skipping the build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Same Dockerfile and APP_VERSION build arg as ci-aws.yml, so the image CI checked is the image that ships.
+      # linux/amd64 only: Droplets are x86.
+      - name: Build and push
+        if: steps.existing.outputs.exists == 'false'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.tag }}
+            FORCE_UNHEALTHY=${{ steps.meta.outputs.force_unhealthy }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The key and the pinned host key go to ~/.ssh on the runner; nothing is printed.
+      - name: Set up SSH
+        env:
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy over SSH
+        id: deploy
+        run: |
+          deploy/ssh-run.sh deploy \
+            "IMAGE_TAG=${{ steps.meta.outputs.tag }}" \
+            "IMAGE_REPO=${{ steps.meta.outputs.repo }}"
+
+      - name: Smoke test
+        run: deploy/smoke-test.sh "$DO_APP_URL" "${{ steps.meta.outputs.tag }}"
+
+      - name: Mark as last good
+        run: deploy/ssh-run.sh mark-good "IMAGE_TAG=${{ steps.meta.outputs.tag }}"
+
+      # Runs only if the deploy started and something after it failed. The job still ends red.
+      - name: Roll back to last good
+        if: failure() && steps.deploy.outcome != 'skipped'
+        run: |
+          echo "::error::Deploy of ${{ steps.meta.outputs.tag }} failed, rolling back."
+          deploy/ssh-run.sh rollback "IMAGE_REPO=${{ steps.meta.outputs.repo }}"
+          deploy/smoke-test.sh "$DO_APP_URL"
+          echo "::notice::Rolled back; the previous version is serving again."

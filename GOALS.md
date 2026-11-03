@@ -14,7 +14,7 @@ owns that pipeline too.
 |---|---|---|
 | **TicTacToeCICD** (this repo) | Next.js app, Dockerfile, Compose file, GitHub Actions workflows (CI, build, deploy, smoke test, rollback), README runbook | The app or the pipeline changes |
 | **[TicTacToeInfra](https://github.com/joheee/TicTacToeInfra)** (Terraform) | Every AWS resource: ECR repo, EC2 instance with SSM, networking and security group, IAM instance role, GitHub OIDC provider and deploy role, SSM Parameter Store entries | The infrastructure changes |
-| **[TicTacToeVpsMigration](https://github.com/joheee/TicTacToeVpsMigration)** (Terraform, project 2) | Every DigitalOcean resource: Droplet, VPC, Cloud Firewall, reserved IP, Spaces backup bucket; cloud-init hardening (deploy user, Docker, Tailscale); cutover and rollback runbooks | The VPS infrastructure or the cutover plan changes |
+| **[TicTacToeVpsMigration](https://github.com/joheee/TicTacToeVpsMigration)** (Terraform, project 2) | Every DigitalOcean resource: Droplet, VPC, Cloud Firewall, reserved IP, Spaces backup bucket; cloud-init hardening (deploy user, key-only SSH, Docker); cutover and rollback runbooks | The VPS infrastructure or the cutover plan changes |
 
 This repo never creates AWS resources, by hand or by script. The pipeline only
 *uses* what Terraform created, through these values copied from
@@ -40,15 +40,14 @@ as repository variables:
 | Variable | Terraform output (TicTacToeVpsMigration) | Used for |
 |---|---|---|
 | `DO_DROPLET_IP` | `droplet_ipv4` | Reference only (DNS points here) |
-| `DO_TAILSCALE_HOST` | `tailscale_hostname` | SSH target over the tailnet |
+| `DO_TAILSCALE_HOST` | `tailscale_hostname` | SSH target (now the reserved IP; Tailscale is no longer used, name kept for the contract) |
 | `DO_DEPLOY_USER` | `deploy_user` | SSH user for deploys and backups |
 | `DO_APP_URL` | `app_url` | Public smoke test |
 | `DO_BACKUP_BUCKET` | `backup_bucket` | Where nightly `pg_dump` files go |
 | `DO_SPACES_ENDPOINT` | `spaces_endpoint` | S3-compatible endpoint for that bucket |
 
 Secrets for the DigitalOcean path live in a `digitalocean` GitHub Environment,
-not in the repository: the Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
-`TS_OAUTH_SECRET`), the deploy SSH key (`DO_SSH_PRIVATE_KEY`, plus
+not in the repository: the deploy SSH key (`DO_SSH_PRIVATE_KEY`, plus
 `DO_SSH_KNOWN_HOSTS`), the app's `.env` values (`POSTGRES_USER`,
 `POSTGRES_PASSWORD`, `POSTGRES_DB`, `SITE_ADDRESS`) and the Spaces keys for
 backups. DigitalOcean has no OIDC, so these are the one place stored
@@ -125,12 +124,12 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
     the same Dockerfile and `APP_VERSION`. `linux/amd64` only (DigitalOcean has
     no ARM Droplets). The GHCR package is public, so the Droplet pulls without
     registry credentials; nothing secret is in the image.
-13. **Deploy to the Droplet over Tailscale.** `deploy-do.yml` joins the tailnet
-    with the Tailscale GitHub Action (ephemeral, tagged node), SSHes to
-    `DO_TAILSCALE_HOST` as `DO_DEPLOY_USER` with a pinned host key, copies
+13. **Deploy to the Droplet over SSH.** `deploy-do.yml` SSHes to
+    `DO_TAILSCALE_HOST` (the reserved IP) as `DO_DEPLOY_USER` with a pinned
+    host key (key-only public SSH, decided in TicTacToeVpsMigration), copies
     `docker-compose.yml`, `Caddyfile` and `deploy/remote/`, writes `.env` from
     the `digitalocean` Environment secrets (mode 600, never printed), pulls the
-    GHCR tag, runs migrations and restarts. No public SSH, no AWS calls.
+    GHCR tag, runs migrations and restarts. No AWS calls.
 14. **Same smoke test and rollback.** `deploy/smoke-test.sh` against
     `DO_APP_URL`; on failure redeploy `last_good_tag` on the Droplet and fail
     the run. The `deploy/remote/` scripts get an image-source and env-source
@@ -142,7 +141,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
     client address, and serves a certificate that works with Cloudflare Full
     (strict).
 16. **Nightly backup with a tested restore.** `backup-do.yml` on a schedule
-    SSHes in over Tailscale and runs `deploy/remote/backup.sh`, which streams
+    SSHes in and runs `deploy/remote/backup.sh`, which streams
     `pg_dump` (custom format, compressed) to `DO_BACKUP_BUCKET`. The bucket's
     lifecycle rule (project 2) keeps 7 days. One restore into a throwaway
     container with row counts checked is logged in the README.
@@ -187,7 +186,8 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
 
-| 12–18 | DigitalOcean target (project 2) | Not started. Waits for TicTacToeVpsMigration's first apply and outputs. |
+| 12–14 | DigitalOcean image, deploy, rollback | Written, not run yet: `ci-do.yml`, `deploy-do.yml`, `deploy/ssh-run.sh`, and the `ENV_SOURCE`/`REGISTRY` switches in `deploy/remote/deploy.sh`. Waits for the Droplet and the variables and secrets. GHCR push is in `deploy-do.yml` only; `deploy-aws.yml` still pushes to ECR only. |
+| 15–18 | Cloudflare trust, backup, uptime, cutover | Not started. |
 
 Open items:
 
@@ -215,7 +215,7 @@ Open items:
 ## Tools and software
 
 GitHub Actions · Docker · Docker Compose · Amazon ECR · Amazon EC2 ·
-GitHub Container Registry · DigitalOcean Droplet · Tailscale · Cloudflare ·
+GitHub Container Registry · DigitalOcean Droplet · Cloudflare ·
 AWS SSM (Run Command) · AWS IAM OIDC · Next.js 16 (App Router, TypeScript) ·
 PostgreSQL · Caddy (HTTPS) · Dependabot · gitleaks · Trivy · curl smoke tests ·
 draw.io for the diagram
@@ -242,7 +242,7 @@ password hashing, httpOnly session cookies for auth.
 DigitalOcean target (project 2):
 
 - [ ] Every image is pushed to GHCR with the same SHA tag as ECR, from one build.
-- [ ] `deploy-do.yml` deploys to the Droplet over Tailscale with no public SSH and no AWS access; `.env` comes from the `digitalocean` Environment and is never printed.
+- [ ] `deploy-do.yml` deploys to the Droplet over SSH (pinned host key) with no AWS access; `.env` comes from the `digitalocean` Environment and is never printed.
 - [ ] Every DigitalOcean value comes from a variable that matches a TicTacToeVpsMigration output; nothing DigitalOcean is created from here.
 - [ ] A broken deploy on the Droplet rolls itself back (one logged run).
 - [ ] Caddy trusts Cloudflare's ranges; the login rate limit sees real client IPs.

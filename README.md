@@ -127,6 +127,32 @@ The proxy is a Compose profile: off locally, on for EC2 (`COMPOSE_PROFILES=proxy
 Caddy sets; counters are in memory, so a deploy resets them). Login always runs a bcrypt compare, so timing
 does not reveal which usernames exist. Passwords are 8 to 72 bytes.
 
+## DigitalOcean target
+
+The app is also being moved to a DigitalOcean Droplet built by
+[TicTacToeVpsMigration](https://github.com/joheee/TicTacToeVpsMigration). Until cutover, production stays on
+EC2 and both DigitalOcean workflows run by hand only, so there is one database taking writes.
+
+| Workflow | What it does |
+|---|---|
+| [`ci-do.yml`](.github/workflows/ci-do.yml) | Manual. Runs the same checks as `ci-aws.yml` by calling it as a reusable workflow. On cutover day it gets the PR and push triggers and `deploy-do.yml` follows it. |
+| [`deploy-do.yml`](.github/workflows/deploy-do.yml) | Manual, from `main`, job in the `digitalocean` Environment. Builds `linux/amd64` once and pushes `<git SHA>` to GHCR (skips if the tag exists), then [`deploy/ssh-run.sh`](deploy/ssh-run.sh) SSHes to the reserved IP as the deploy user with a pinned host key and runs the shared `deploy/remote/` scripts. Then smoke test, mark good, and automatic rollback, as on AWS. |
+
+- The compose file, Caddyfile, scripts and the `.env` values travel as a tarball on ssh's stdin, so secrets
+  never appear on a command line or in the logs. The server writes `.env` (mode 600) and never prints it.
+- `deploy/remote/deploy.sh` serves both targets: `ENV_SOURCE=ssm` and `REGISTRY=ecr` (default, EC2) or
+  `ENV_SOURCE=file` and `REGISTRY=ghcr` (Droplet).
+- The GHCR package must be public so the Droplet pulls without credentials: after the first push, set its
+  visibility in the package settings (GitHub UI).
+- **Variables** (repository, from TicTacToeVpsMigration's `terraform output`): `DO_DROPLET_IP`,
+  `DO_TAILSCALE_HOST` (the reserved IP; the name is kept for the output contract), `DO_DEPLOY_USER`,
+  `DO_APP_URL`, `DO_BACKUP_BUCKET`, `DO_SPACES_ENDPOINT`.
+- **Secrets** (`digitalocean` Environment): `DO_SSH_PRIVATE_KEY`, `DO_SSH_KNOWN_HOSTS` (from
+  `ssh-keyscan` of the Droplet, checked against the console), `POSTGRES_USER`, `POSTGRES_PASSWORD`,
+  `POSTGRES_DB`, `SITE_ADDRESS`, and the Spaces keys for backups.
+- **Run it:** Actions → Deploy DO → Run workflow. `break_health` is the rollback demo; use it on the
+  rehearsal subdomain only.
+
 ## One-time setup
 
 1. Apply TicTacToeInfra. It must allow inbound 80 and 443 on the instance.
