@@ -188,27 +188,41 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 9 | Client-style README | Done. Architecture diagram, local run, CI, supply chain, deploy, HTTPS, one-time setup, runbook, cost estimate and the link to the rolled-back run (#41087349024). |
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
-
 | 12–14 | DigitalOcean image, deploy, rollback | Written, not run yet: `ci-do.yml`, `deploy-do.yml`, `deploy/ssh-run.sh`, and the `ENV_SOURCE`/`REGISTRY` switches in `deploy/remote/deploy.sh`. Waits for the Droplet and the variables and secrets. Registries are separate: `deploy-aws.yml` pushes to ECR only, `deploy-do.yml` to GHCR only. |
 | 15 | Cloudflare in front | Caddy `trusted_proxies` and verified `X-Forwarded-For` written and tested locally with a trusted and an untrusted peer. Not yet seen behind real Cloudflare. |
 | 16 | Nightly backup, tested restore | `backup-do.yml`, `deploy/remote/backup.sh` and `counts.sh` written; dump and restore checked locally in Postgres 18. Waits for the Droplet, the bucket and the Spaces keys; the README restore log is still empty. |
 | 17–18 | Uptime check, cutover | Not started. |
 
-Paused on 4 Nov 2026: DigitalOcean is unavailable (payment card issue), so nothing
-DigitalOcean-side has run yet. Everything in rows 12–16 is written and uncommitted
-or untested against a real Droplet. Next steps that need no DigitalOcean access:
+**Paused on 4 Nov 2026 (DigitalOcean side only).** The DigitalOcean account is
+still on the free tier because the payment card can't be added, so no Droplet
+exists and nothing in rows 12–16 has run against one. The code is committed
+(48fb0f1 CI/CD for DigitalOcean, 4e84aef backup workflow) and `ci-do.yml` ran
+green once by hand. `deploy-do.yml` and `backup-do.yml` stay manual-only, so they
+cost nothing and change nothing while paused. The AWS pipeline (rows 1–11) is
+unaffected and stays the production path.
+
+To resume: once TicTacToeVpsMigration is applied (see its GOALS.md "Status:
+paused"), copy its six outputs into the `DO_*` variables, fill the `digitalocean`
+Environment secrets, then run `deploy-do.yml` on the rehearsal subdomain.
+
+Work that needs no DigitalOcean access and can be done while paused:
 
 1. Rehearse `deploy/ssh-run.sh` locally against an `sshd` container with the Docker
    socket mounted (deploy, `mark-good`, a broken tag for rollback, `backup`, `counts`,
    and check `.env` is never printed). This needs an `APP_DIR` override, default `/opt/app`.
 2. Re-test the EC2 path of `deploy.sh` (`ENV_SOURCE=ssm`, `REGISTRY=ecr`) with a
-   stubbed `aws`; the `Caddyfile` and `deploy.sh` changes reach production on the next push.
+   stubbed `aws`. The `Caddyfile` and `deploy.sh` changes have not reached EC2 yet
+   (see the failed deploy under Open items).
 3. Add `actionlint` and `shellcheck` to CI.
 4. Optional: a scheduled uptime check on `/api/health` (objective 17) as a stopgap.
-5. Commit the pending work (nothing from the last two sessions is committed).
 
 Open items:
 
+- `Deploy AWS` run 3 on 4e84aef (3 Nov 2026) failed at "Deploy over SSM" and its
+  rollback failed the same way: SSM answered `InvalidInstanceId: Instances not in
+  a valid state`, which means the EC2 instance was not running. If it was stopped on
+  purpose, the live site is down and every push to `main` will fail `Deploy AWS`
+  until the instance is started again (or the workflow is disabled).
 - Parameter Store still holds a `CHANGE_ME` placeholder (the deploy log warns about
   it). Replace it; if it is `POSTGRES_PASSWORD`, run `ALTER USER` in Postgres first
   (README, "Rotate the DB password").
