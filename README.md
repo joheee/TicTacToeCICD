@@ -138,6 +138,8 @@ EC2 and both DigitalOcean workflows run by hand only, so there is one database t
 | [`ci-do.yml`](.github/workflows/ci-do.yml) | Manual. Runs the same checks as `ci-aws.yml` by calling it as a reusable workflow. On cutover day it gets the PR and push triggers and `deploy-do.yml` follows it. |
 | [`deploy-do.yml`](.github/workflows/deploy-do.yml) | Manual, from `main`, job in the `digitalocean` Environment. Builds `linux/amd64` once and pushes `<git SHA>` to GHCR (skips if the tag exists), then [`deploy/ssh-run.sh`](deploy/ssh-run.sh) SSHes to the reserved IP as the deploy user with a pinned host key and runs the shared `deploy/remote/` scripts. Then smoke test, mark good, and automatic rollback, as on AWS. |
 
+| [`backup-do.yml`](.github/workflows/backup-do.yml) | Nightly (02:17 Jakarta) and manual, in the `digitalocean` Environment. `deploy/ssh-run.sh backup` streams `pg_dump` (custom format) from the db container over SSH to the runner, which checks it is a real dump and uploads it to `DO_BACKUP_BUCKET` with `aws s3 cp` against `DO_SPACES_ENDPOINT`. The Spaces keys stay on GitHub; the Droplet never sees them. The schedule skips while `DO_BACKUP_BUCKET` is unset. The bucket's lifecycle rule keeps 7 days. Run it with `restore_test` on to restore the dump into a throwaway Postgres on the runner and compare `users` and `games` row counts with the live database. |
+
 - The compose file, Caddyfile, scripts and the `.env` values travel as a tarball on ssh's stdin, so secrets
   never appear on a command line or in the logs. The server writes `.env` (mode 600) and never prints it.
 - `deploy/remote/deploy.sh` serves both targets: `ENV_SOURCE=ssm` and `REGISTRY=ecr` (default, EC2) or
@@ -149,7 +151,15 @@ EC2 and both DigitalOcean workflows run by hand only, so there is one database t
   `DO_APP_URL`, `DO_BACKUP_BUCKET`, `DO_SPACES_ENDPOINT`.
 - **Secrets** (`digitalocean` Environment): `DO_SSH_PRIVATE_KEY`, `DO_SSH_KNOWN_HOSTS` (from
   `ssh-keyscan` of the Droplet, checked against the console), `POSTGRES_USER`, `POSTGRES_PASSWORD`,
-  `POSTGRES_DB`, `SITE_ADDRESS`, and the Spaces keys for backups.
+  `POSTGRES_DB`, `SITE_ADDRESS`, and the Spaces keys for backups (`SPACES_ACCESS_KEY_ID`,
+  `SPACES_SECRET_ACCESS_KEY`).
+- **Cloudflare.** The [`Caddyfile`](Caddyfile) trusts Cloudflare's published IP ranges (`trusted_proxies`) and
+  reads the client address from `CF-Connecting-IP`, then sets `X-Forwarded-For` to that verified address, so
+  the app's per-IP login rate limit sees the real visitor and a client cannot pick its own IP by sending the
+  header. From any other peer (EC2 directly, or a request that bypasses Cloudflare) the headers are ignored and
+  the peer address is used, so the same file serves both targets. Refresh the list from
+  <https://www.cloudflare.com/ips> when it changes. Cloudflare's SSL mode is Full (strict); Caddy's Let's
+  Encrypt certificate satisfies it.
 - **Run it:** Actions → Deploy DO → Run workflow. `break_health` is the rollback demo; use it on the
   rehearsal subdomain only.
 

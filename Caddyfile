@@ -1,5 +1,17 @@
 # Reverse proxy in front of the app. Caddy gets and renews the Let's Encrypt certificate by itself
 # and redirects http:// to https://. SITE_ADDRESS comes from .env (tictactoe.johe.my.id on EC2).
+
+# Client IP. On the Droplet Cloudflare sits in front, so the TCP peer is a Cloudflare address. Caddy trusts
+# the forwarded headers only when the peer is in Cloudflare's published ranges (https://www.cloudflare.com/ips,
+# last copied 2026-11-03; refresh the list when Cloudflare changes it). Any other peer (EC2 directly, or someone
+# bypassing Cloudflare) is untrusted, so its headers are ignored and the peer address is the client.
+{
+	servers {
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
@@ -17,5 +29,9 @@
 		-Server
 	}
 
-	reverse_proxy app:3000
+	# The app rate-limits by the first X-Forwarded-For entry. Overwrite it with the verified client IP, so a client
+	# cannot choose its own address by sending that header.
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-For {client_ip}
+	}
 }

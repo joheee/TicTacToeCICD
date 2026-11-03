@@ -119,11 +119,14 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 
 ### DigitalOcean target (project 2)
 
-12. **Image to GHCR.** `deploy-aws.yml` (and later `deploy-do.yml`) pushes the same
-    `<git SHA>` image to GitHub Container Registry next to ECR, built once from
-    the same Dockerfile and `APP_VERSION`. `linux/amd64` only (DigitalOcean has
-    no ARM Droplets). The GHCR package is public, so the Droplet pulls without
-    registry credentials; nothing secret is in the image.
+12. **One registry per provider.** Each target builds and pushes its own image
+    and never touches the other's registry: `deploy-aws.yml` pushes only to
+    Amazon ECR, `deploy-do.yml` pushes only to GitHub Container Registry. Both
+    tag the image `<git SHA>` and build it from the same Dockerfile and
+    `APP_VERSION` as CI. DigitalOcean is `linux/amd64` only (no ARM Droplets).
+    The GHCR package is public, so the Droplet pulls without registry
+    credentials; nothing secret is in the image. Removing the AWS path later
+    removes ECR with it and leaves the DigitalOcean path untouched.
 13. **Deploy to the Droplet over SSH.** `deploy-do.yml` SSHes to
     `DO_TAILSCALE_HOST` (the reserved IP) as `DO_DEPLOY_USER` with a pinned
     host key (key-only public SSH, decided in TicTacToeVpsMigration), copies
@@ -186,8 +189,10 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 10 | HTTPS | Done. Caddy, Let's Encrypt, HSTS and security headers. |
 | 11 | Supply-chain checks | Done. Pinned actions, Dependabot, audit, gitleaks, Trivy. |
 
-| 12–14 | DigitalOcean image, deploy, rollback | Written, not run yet: `ci-do.yml`, `deploy-do.yml`, `deploy/ssh-run.sh`, and the `ENV_SOURCE`/`REGISTRY` switches in `deploy/remote/deploy.sh`. Waits for the Droplet and the variables and secrets. GHCR push is in `deploy-do.yml` only; `deploy-aws.yml` still pushes to ECR only. |
-| 15–18 | Cloudflare trust, backup, uptime, cutover | Not started. |
+| 12–14 | DigitalOcean image, deploy, rollback | Written, not run yet: `ci-do.yml`, `deploy-do.yml`, `deploy/ssh-run.sh`, and the `ENV_SOURCE`/`REGISTRY` switches in `deploy/remote/deploy.sh`. Waits for the Droplet and the variables and secrets. Registries are separate: `deploy-aws.yml` pushes to ECR only, `deploy-do.yml` to GHCR only. |
+| 15 | Cloudflare in front | Caddy `trusted_proxies` and verified `X-Forwarded-For` written and tested locally with a trusted and an untrusted peer. Not yet seen behind real Cloudflare. |
+| 16 | Nightly backup, tested restore | `backup-do.yml`, `deploy/remote/backup.sh` and `counts.sh` written; dump and restore checked locally in Postgres 18. Waits for the Droplet, the bucket and the Spaces keys; the README restore log is still empty. |
+| 17–18 | Uptime check, cutover | Not started. |
 
 Open items:
 
@@ -241,7 +246,7 @@ password hashing, httpOnly session cookies for auth.
 
 DigitalOcean target (project 2):
 
-- [ ] Every image is pushed to GHCR with the same SHA tag as ECR, from one build.
+- [ ] `deploy-do.yml` pushes the SHA-tagged image to GHCR only, and `deploy-aws.yml` to ECR only; neither workflow uses the other's registry.
 - [ ] `deploy-do.yml` deploys to the Droplet over SSH (pinned host key) with no AWS access; `.env` comes from the `digitalocean` Environment and is never printed.
 - [ ] Every DigitalOcean value comes from a variable that matches a TicTacToeVpsMigration output; nothing DigitalOcean is created from here.
 - [ ] A broken deploy on the Droplet rolls itself back (one logged run).

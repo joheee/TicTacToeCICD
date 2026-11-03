@@ -59,9 +59,11 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
   deploy user, with a pinned host key (`StrictHostKeyChecking yes`). Port 22
   is opened by TicTacToeVpsMigration (key-only, fail2ban), never from here.
   Never disable host key checking.
-- Images are `linux/amd64`, built once and pushed to both ECR and GHCR with
-  the same SHA tag. The DigitalOcean deploy must ship the exact image CI
-  checked.
+- One registry per provider: the AWS workflow pushes only to ECR, the
+  DigitalOcean workflow only to GHCR, each tagged with the git SHA. Never add
+  a GHCR push to `deploy-aws.yml` or an ECR push to `deploy-do.yml`. The
+  DigitalOcean image is `linux/amd64` and built from the same Dockerfile and
+  `APP_VERSION` as CI, so it is the image CI checked.
 - Until cutover, `deploy-do.yml` is `workflow_dispatch` only, so production
   keeps one database (EC2). Don't put it on `workflow_run` or disable
   `deploy-aws.yml` until asked on cutover day. Keep the AWS path working until
@@ -109,6 +111,13 @@ actions in `src/lib/play.ts` and `src/lib/actions.ts`, schema in
   (tarball plus `.env` values over ssh stdin), smoke tests `DO_APP_URL`,
   `mark-good`, and rolls back on failure. `deploy.sh` switches on
   `ENV_SOURCE` (`ssm` default, `file`) and `REGISTRY` (`ecr` default, `ghcr`).
+- `backup-do.yml` (nightly + manual, `digitalocean` Environment) streams
+  `deploy/remote/backup.sh` (pg_dump to stdout) through `deploy/ssh-run.sh
+  backup` to the runner, which uploads to Spaces with the Spaces keys. Those keys
+  must never be sent to the Droplet. `ssh-run.sh` must print nothing on stdout
+  for `backup`. The `Caddyfile` trusts Cloudflare's ranges and rewrites
+  `X-Forwarded-For` to `{client_ip}`; it is shared with EC2, so keep it working
+  without Cloudflare.
 - `deploy/ssm-run.sh` tars `docker-compose.yml`, `Caddyfile` and `deploy/remote/`
   into the SSM command, so scripts under `deploy/remote/` run on the instance as
   root. They must never print `.env`. The deploy role only allows ECR push,

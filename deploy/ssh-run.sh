@@ -3,7 +3,7 @@
 # The DigitalOcean twin of deploy/ssm-run.sh; the scripts are the same ones, switched with ENV_SOURCE=file
 # and REGISTRY=ghcr.
 #
-# Usage: deploy/ssh-run.sh <deploy|rollback|mark-good> [KEY=VALUE ...]
+# Usage: deploy/ssh-run.sh <deploy|rollback|mark-good|backup|counts> [KEY=VALUE ...]
 # Needs: DO_SSH_HOST, DO_DEPLOY_USER, and ~/.ssh/id_deploy plus ~/.ssh/known_hosts (the workflow writes them).
 # For deploy and rollback also POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB and SITE_ADDRESS in the environment.
 #
@@ -11,7 +11,7 @@
 # stdin, so the secrets never appear on a command line or in the logs. The host key must already be pinned.
 set -euo pipefail
 
-action=${1:?usage: ssh-run.sh <deploy|rollback|mark-good> [KEY=VALUE ...]}
+action=${1:?usage: ssh-run.sh <deploy|rollback|mark-good|backup|counts> [KEY=VALUE ...]}
 shift
 : "${DO_SSH_HOST:?}" "${DO_DEPLOY_USER:?}"
 
@@ -21,7 +21,9 @@ root=$(git rev-parse --show-toplevel)
 umask 077
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-if [ "$action" != mark-good ]; then
+# Only deploy and rollback write .env, so only they need the secrets. backup and counts read the running stack.
+# backup writes the dump to stdout, so nothing else in this script may print to stdout.
+if [ "$action" = deploy ] || [ "$action" = rollback ]; then
   : "${POSTGRES_USER:?}" "${POSTGRES_PASSWORD:?}" "${POSTGRES_DB:?}" "${SITE_ADDRESS:?}"
   printf 'POSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\nPOSTGRES_DB=%s\nSITE_ADDRESS=%s\n' \
     "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" "$SITE_ADDRESS" > "$tmp/deploy.env"

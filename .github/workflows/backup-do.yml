@@ -1,0 +1,115 @@
+name: Backup DO
+
+# Nightly pg_dump of the Droplet's database into the Spaces bucket, and a manual restore test.
+# The dump streams over SSH to the runner (deploy/remote/backup.sh) and is uploaded from there, so the Spaces
+# keys never reach the Droplet. The bucket's lifecycle rule (TicTacToeVpsMigration) deletes old dumps.
+# Everything runs in the "digitalocean" Environment. Until cutover the Droplet's database is only a rehearsal
+# copy, so the schedule is skipped while DO_BACKUP_BUCKET is not set.
+on:
+  schedule:
+    - cron: "17 19 * * *" # 02:17 in Jakarta; an odd minute avoids GitHub's busy hour marks
+  workflow_dispatch:
+    inputs:
+      restore_test:
+        description: "After the backup, restore the dump into a throwaway Postgres on the runner and compare row counts"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never overlap a deploy: both touch the same containers.
+concurrency:
+  group: deploy-do
+  cancel-in-progress: false
+
+env:
+  DO_SSH_HOST: ${{ vars.DO_TAILSCALE_HOST }} # output name kept for the contract; now the reserved IP
+  DO_DEPLOY_USER: ${{ vars.DO_DEPLOY_USER }}
+  DO_BACKUP_BUCKET: ${{ vars.DO_BACKUP_BUCKET }}
+  DO_SPACES_ENDPOINT: ${{ vars.DO_SPACES_ENDPOINT }}
+  # aws-cli talks to Spaces as to any S3. The region is a dummy value; newer CLI checksums are not supported.
+  AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+
+jobs:
+  backup:
+    name: Dump and upload
+    if: vars.DO_BACKUP_BUCKET != '' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: digitalocean
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check variables and secrets
+        env:
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for v in DO_SSH_HOST DO_DEPLOY_USER DO_BACKUP_BUCKET DO_SPACES_ENDPOINT DO_SSH_PRIVATE_KEY \
+                   DO_SSH_KNOWN_HOSTS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing variables or secrets:$missing (the Spaces keys are SPACES_ACCESS_KEY_ID and SPACES_SECRET_ACCESS_KEY)."
+            exit 1
+          fi
+
+      - name: Set up SSH
+        env:
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # Dump to a file first, so a failed or empty dump is never uploaded as if it were a backup.
+      - name: Dump the database
+        run: |
+          deploy/ssh-run.sh backup > dump.pgdump
+          size=$(stat -c %s dump.pgdump)
+          [ "$(head -c 5 dump.pgdump)" = "PGDMP" ] || { echo "::error::Not a pg_dump custom-format file."; exit 1; }
+          echo "Dump is $size bytes."
+
+      - name: Upload to Spaces
+        id: upload
+        run: |
+          key="postgres/tictactoe-$(date -u +%Y%m%dT%H%M%SZ).dump"
+          aws s3 cp dump.pgdump "s3://$DO_BACKUP_BUCKET/$key" --endpoint-url "$DO_SPACES_ENDPOINT" --no-progress
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "::notice::Uploaded $key"
+
+      # Manual only. Proves the dump restores: a throwaway Postgres on the runner, then row counts on both sides.
+      - name: Restore test
+        if: inputs.restore_test
+        run: |
+          aws s3 cp "s3://$DO_BACKUP_BUCKET/${{ steps.upload.outputs.key }}" restore.pgdump \
+            --endpoint-url "$DO_SPACES_ENDPOINT" --no-progress
+          docker run -d --name restore-test -e POSTGRES_PASSWORD=throwaway -e POSTGRES_DB=restore postgres:18-alpine > /dev/null
+          for _ in $(seq 1 30); do
+            docker exec restore-test pg_isready -U postgres -d restore > /dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec -i restore-test pg_restore --no-owner -U postgres -d restore --exit-on-error < restore.pgdump
+          docker exec -i restore-test psql -At -F ' ' -U postgres -d restore > restored.counts << 'SQL'
+          select 'users', count(*) from users
+          union all select 'games', count(*) from games;
+          SQL
+          deploy/ssh-run.sh counts > live.counts
+          docker rm -f restore-test > /dev/null
+          echo "Row counts (table count)"; echo "--- restored"; cat restored.counts; echo "--- live Droplet"; cat live.counts
+          if diff -q restored.counts live.counts > /dev/null; then
+            echo "::notice::Restore test passed: every table has the same row count as the live database."
+          else
+            echo "::error::Row counts differ. If the app took writes since the dump this is expected; re-run with writes frozen."
+            exit 1
+          fi
