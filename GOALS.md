@@ -116,11 +116,11 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
     HTTPS URL.
 11. **Supply-chain checks.** Third-party actions pinned to commit SHAs, Dependabot,
     `npm audit`, a gitleaks scan of the history and a Trivy scan of the image, all
-    in `ci.yml` with no AWS access.
+    in `ci-aws.yml` with no AWS access.
 
 ### DigitalOcean target (project 2)
 
-12. **Image to GHCR.** `deploy.yml` (and later `deploy-do.yml`) pushes the same
+12. **Image to GHCR.** `deploy-aws.yml` (and later `deploy-do.yml`) pushes the same
     `<git SHA>` image to GitHub Container Registry next to ECR, built once from
     the same Dockerfile and `APP_VERSION`. `linux/amd64` only (DigitalOcean has
     no ARM Droplets). The GHCR package is public, so the Droplet pulls without
@@ -151,7 +151,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 18. **Cutover switch.** Until cutover, `deploy-do.yml` runs only by hand
     (`workflow_dispatch`), so production stays on EC2 and only one database
     takes writes. On cutover day it becomes the `workflow_run` deploy after
-    CI, `deploy.yml` is disabled, and `APP_URL` points at the Droplet. After
+    CI, `deploy-aws.yml` is disabled, and `APP_URL` points at the Droplet. After
     TicTacToeInfra is destroyed, the AWS workflow, ECR push and AWS variables
     are removed and the README's diagram, setup and cost sections switch to
     DigitalOcean (the AWS version stays in git history and in project 2's
@@ -177,8 +177,8 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 |---|---|---|
 | 1 | Sample app | Done. Auth, game, leaderboard, `/api/health`, migrations `0000`–`0003`, UI polish, login hardening. Next.js 16. |
 | 2 | Docker Compose | Done, locally and on EC2 (db → migrate → app, plus the `proxy` profile on EC2). |
-| 3 | CI on pull requests | Done. `ci.yml` has three parallel jobs: lint, type-check, test and `npm audit`; gitleaks; Docker build and Trivy scan. Green on `main`. |
-| 4 | Build and push to ECR | Done and run against AWS. `deploy.yml` pushes `<git SHA>` after CI passes on `main`. |
+| 3 | CI on pull requests | Done. `ci-aws.yml` has three parallel jobs: lint, type-check, test and `npm audit`; gitleaks; Docker build and Trivy scan. Green on `main`. |
+| 4 | Build and push to ECR | Done and run against AWS. `deploy-aws.yml` pushes `<git SHA>` after CI passes on `main`. |
 | 5 | Deploy to EC2 via SSM + OIDC | Done and run against AWS. Live at https://tictactoe.johe.my.id. |
 | 6 | Smoke test | Done. Runs after every deploy against the public HTTPS URL. |
 | 7 | Automatic rollback | Done and proven (see 8). |

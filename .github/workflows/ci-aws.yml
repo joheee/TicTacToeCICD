@@ -1,4 +1,4 @@
-name: CI
+name: CI AWS
 
 # Runs on every pull request and on every push to main. Nothing is pushed or deployed from here,
 # and no AWS access is needed. Third-party actions are pinned to a commit SHA (the tag is in the comment);

@@ -1,2 +1,2 @@
-# Findings the image scan (ci.yml) accepts, each with the reason. Remove an entry when its fix ships.
+# Findings the image scan (ci-aws.yml) accepts, each with the reason. Remove an entry when its fix ships.
 # None right now: the postcss exception went away with the Next 16 upgrade.

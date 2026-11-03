@@ -1,13 +1,13 @@
-name: Deploy
+name: Deploy AWS
 
 # Ships main to EC2 after CI passes: build once, push to ECR (tag = git SHA), deploy over SSM,
 # smoke test the public URL, and roll back to the last good tag if anything fails.
 # AWS access comes from the deploy role in TicTacToeInfra (OIDC, no stored keys); every AWS value
 # is a repository variable copied from that repo's Terraform outputs. Actions are pinned to commit SHAs
-# (the tag is in the comment), like in ci.yml.
+# (the tag is in the comment), like in ci-aws.yml.
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI AWS]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -95,7 +95,7 @@ jobs:
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         if: steps.existing.outputs.exists == 'false'
 
-      # Same Dockerfile and APP_VERSION build arg as ci.yml, so the image CI checked is the image that ships.
+      # Same Dockerfile and APP_VERSION build arg as ci-aws.yml, so the image CI checked is the image that ships.
       - name: Build and push
         if: steps.existing.outputs.exists == 'false'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

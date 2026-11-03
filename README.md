@@ -64,7 +64,7 @@ and `npm run dev`. Never commit `.env` or `.env.local`.
 
 ## CI
 
-[`ci.yml`](.github/workflows/ci.yml) runs on every pull request and on pushes to `main`. It has no AWS
+[`ci-aws.yml`](.github/workflows/ci-aws.yml) runs on every pull request and on pushes to `main`. It has no AWS
 access and never deploys.
 
 | Job | Steps |
@@ -98,7 +98,7 @@ docker build --build-arg APP_VERSION=local -t tictactoe-app:check .
 
 ## Deploy
 
-[`deploy.yml`](.github/workflows/deploy.yml) runs after CI passes on a push to `main` (never for PRs), or by
+[`deploy-aws.yml`](.github/workflows/deploy-aws.yml) runs after CI passes on a push to `main` (never for PRs), or by
 hand from the Actions tab. One deploy runs at a time.
 
 | Step | What happens |

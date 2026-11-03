@@ -61,7 +61,7 @@ that makes the CI/CD story (build, push, deploy, smoke test, rollback) clearer.
   checked.
 - Until cutover, `deploy-do.yml` is `workflow_dispatch` only, so production
   keeps one database (EC2). Don't put it on `workflow_run` or disable
-  `deploy.yml` until asked on cutover day. Keep the AWS path working until
+  `deploy-aws.yml` until asked on cutover day. Keep the AWS path working until
   TicTacToeInfra is destroyed.
 - `deploy/remote/` scripts are shared by both targets. Add an image-source and
   env-source switch rather than forking them, and test both paths after any
@@ -86,19 +86,19 @@ actions in `src/lib/play.ts` and `src/lib/actions.ts`, schema in
 
 ## Pipeline state
 
-- `.github/workflows/ci.yml` runs on PRs and pushes to `main`. Three parallel
+- `.github/workflows/ci-aws.yml` runs on PRs and pushes to `main`. Three parallel
   jobs: lint/type-check/test plus `npm audit --omit=dev --audit-level=high`
   (Node 22, `npm ci`); a gitleaks scan of the full history; and a Docker Buildx
   build (`push: false`, `load: true`, tagged `github.sha`, `APP_VERSION=${{ github.sha }}`)
   followed by a Trivy scan (fixable HIGH/CRITICAL fail the job, exceptions go in
   `.trivyignore` with a reason). It has no AWS access and must stay that way.
-- `.github/workflows/deploy.yml` is verified on AWS. It runs after CI succeeds
+- `.github/workflows/deploy-aws.yml` is verified on AWS. It runs after CI succeeds
   on a push to `main` (`workflow_run`) or by hand. It builds and pushes `<sha>`
   to ECR (skips if the tag exists, tags are immutable), deploys with
   `deploy/ssm-run.sh deploy`, smoke tests the public HTTPS URL with
   `deploy/smoke-test.sh`, records `/opt/app/last_good_tag` with `mark-good`, and
   on failure runs `rollback`. The rollback was demonstrated for real with
-  `break_health`. Keep AWS steps out of `ci.yml`.
+  `break_health`. Keep AWS steps out of `ci-aws.yml`.
 - `deploy/ssm-run.sh` tars `docker-compose.yml`, `Caddyfile` and `deploy/remote/`
   into the SSM command, so scripts under `deploy/remote/` run on the instance as
   root. They must never print `.env`. The deploy role only allows ECR push,
