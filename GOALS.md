@@ -173,7 +173,7 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 - Managed RDS. Postgres runs in Compose with a named volume, so the demo stays
   cheap; the README mentions RDS as the production upgrade.
 
-## Status (checked 31 Oct 2026)
+## Status (checked 4 Nov 2026)
 
 | # | Objective | State |
 |---|---|---|
@@ -193,6 +193,19 @@ like "Basic CI/CD pipeline for an app on EC2", "Guided AWS CI/CD session",
 | 15 | Cloudflare in front | Caddy `trusted_proxies` and verified `X-Forwarded-For` written and tested locally with a trusted and an untrusted peer. Not yet seen behind real Cloudflare. |
 | 16 | Nightly backup, tested restore | `backup-do.yml`, `deploy/remote/backup.sh` and `counts.sh` written; dump and restore checked locally in Postgres 18. Waits for the Droplet, the bucket and the Spaces keys; the README restore log is still empty. |
 | 17–18 | Uptime check, cutover | Not started. |
+
+Paused on 4 Nov 2026: DigitalOcean is unavailable (payment card issue), so nothing
+DigitalOcean-side has run yet. Everything in rows 12–16 is written and uncommitted
+or untested against a real Droplet. Next steps that need no DigitalOcean access:
+
+1. Rehearse `deploy/ssh-run.sh` locally against an `sshd` container with the Docker
+   socket mounted (deploy, `mark-good`, a broken tag for rollback, `backup`, `counts`,
+   and check `.env` is never printed). This needs an `APP_DIR` override, default `/opt/app`.
+2. Re-test the EC2 path of `deploy.sh` (`ENV_SOURCE=ssm`, `REGISTRY=ecr`) with a
+   stubbed `aws`; the `Caddyfile` and `deploy.sh` changes reach production on the next push.
+3. Add `actionlint` and `shellcheck` to CI.
+4. Optional: a scheduled uptime check on `/api/health` (objective 17) as a stopgap.
+5. Commit the pending work (nothing from the last two sessions is committed).
 
 Open items:
 
